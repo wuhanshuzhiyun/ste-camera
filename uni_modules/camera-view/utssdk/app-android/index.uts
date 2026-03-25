@@ -1,0 +1,231 @@
+import { CameraView } from "uts.ste.camera"
+import { CameraOptions, View, ViewStyle, ScanBarOptions, CameraOpenSuccessResult, CameraOpenFailResult } from "../interface"
+
+
+function hasPermission() : Promise<boolean> {
+	return new Promise((resolve, reject) => {
+		const permissionCheck = ["android.permission.CAMERA"]
+		// Android 6.0 以下默认授权
+		if (UTSAndroid.checkSystemPermissionGranted(UTSAndroid.getUniActivity()!, permissionCheck)) {
+			resolve(true)
+			return
+		}
+		UTSAndroid.requestSystemPermission(UTSAndroid.getUniActivity()!, permissionCheck, function (allRight : boolean, _ : string[]) {
+			if (allRight) {
+				resolve(true)
+			} else {
+				reject(false)
+			}
+		}, function (_ : boolean, _ : string[]) {
+			reject(false)
+		})
+	})
+}
+
+/**
+ * 将 ViewStyle 对象转换为 Map（过滤 null 值）
+ */
+function styleToMap(style : ViewStyle) : Map<string, Any> {
+	const result = new Map<string, Any>()
+	const topVal = style.top
+	if (topVal != null) result.put("top", topVal)
+	const leftVal = style.left
+	if (leftVal != null) result.put("left", leftVal)
+	const fontSizeVal = style.fontSize
+	if (fontSizeVal != null) result.put("fontSize", fontSizeVal)
+	const fontColorVal = style.fontColor
+	if (fontColorVal != null) result.put("fontColor", fontColorVal)
+	const fontStyleVal = style.fontStyle
+	if (fontStyleVal != null) result.put("fontStyle", fontStyleVal)
+	const fontWeightVal = style.fontWeight
+	if (fontWeightVal != null) result.put("fontWeight", fontWeightVal)
+	const textAlignVal = style.textAlign
+	if (textAlignVal != null) result.put("textAlign", textAlignVal)
+	const textOffsetVal = style.textOffset
+	if (textOffsetVal != null) result.put("textOffset", textOffsetVal)
+	const widthVal = style.width
+	if (widthVal != null) result.put("width", widthVal)
+	const heightVal = style.height
+	if (heightVal != null) result.put("height", heightVal)
+	return result
+}
+
+/**
+ * 将 View 对象转换为 Map
+ */
+function viewToMap(view : View) : Map<string, Any> {
+	const result = new Map<string, Any>()
+	const uidVal = view.uid
+	if (uidVal != null) result.put("uid", uidVal)
+	const watermarkVal = view.watermark
+	if (watermarkVal != null) result.put("watermark", watermarkVal)
+	result.put("type", view.type)
+	const textVal = view.text
+	if (textVal != null) result.put("text", textVal)
+	const imageVal = view.image
+	if (imageVal != null) result.put("image", imageVal)
+	const styleVal = view.style
+	if (styleVal != null) result.put("style", styleToMap(styleVal))
+	return result
+}
+
+function viewsToMaps(views : Array<View> | null) : Array<Map<string, Any>> | null {
+	if (views == null || views.length === 0) return null
+	const result = new Array<Map<string, Any>>()
+	for (let i = 0; i < views.length; i++) {
+		result.push(viewToMap(views[i]))
+	}
+	return result
+}
+
+/**
+ * 将 ScanBarOptions 对象转换为 Map
+ */
+function scanBarToMap(scanBar : ScanBarOptions) : Map<string, Any> {
+	const result = new Map<string, Any>()
+	const imageVal = scanBar.image
+	if (imageVal != null) result.put("image", imageVal)
+	const widthPercentVal = scanBar.widthPercent
+	if (widthPercentVal != null) result.put("widthPercent", widthPercentVal)
+	const startYVal = scanBar.startY
+	if (startYVal != null) result.put("startY", startYVal)
+	const endYVal = scanBar.endY
+	if (endYVal != null) result.put("endY", endYVal)
+	return result
+}
+
+/**
+ * 显示相机页面
+ */
+export const showCamera = (options ?: CameraOptions) : void => {
+	const opts = options ?? {} as CameraOptions
+	
+	// 提前提取所有需要的值，避免闭包引用问题
+	const width = opts.width?.toInt() ?? null
+	const height = opts.height?.toInt() ?? null
+	const top = opts.top?.toInt() ?? null
+	const left = opts.left?.toInt() ?? null
+	const cameraFacing = opts.cameraFacing ?? "back"
+	const views = viewsToMaps(opts.views)
+	const scanBarMap = opts.scanBar != null ? scanBarToMap(opts.scanBar!) : null
+	
+	// 提前提取回调函数
+	const successFn = opts.success
+	const failFn = opts.fail
+	const completeFn = opts.complete
+	const hasSuccess = successFn != null
+	const hasFail = failFn != null
+	const hasComplete = completeFn != null
+	const needCallback = hasSuccess || hasFail || hasComplete
+	
+	// 请求拍照权限
+	hasPermission().then(() => {
+		// 创建 Kotlin 回调
+		const callback = needCallback
+			? CameraView.createCameraOpenCallback(
+				(cameraFacingResult : string) => {
+					if (hasSuccess) {
+						const result : CameraOpenSuccessResult = { cameraFacing: cameraFacingResult }
+						successFn!(result)
+					}
+					if (hasComplete) {
+						const result : CameraOpenSuccessResult = { cameraFacing: cameraFacingResult }
+						completeFn!(result)
+					}
+				},
+				(errCode : number, errMsg : string) => {
+					if (hasFail) {
+						const result : CameraOpenFailResult = { errCode, errMsg }
+						failFn!(result)
+					}
+					if (hasComplete) {
+						const result : CameraOpenFailResult = { errCode, errMsg }
+						completeFn!(result)
+					}
+				}
+			)
+			: null
+
+		CameraView.showCamera(
+			width,
+			height,
+			top,
+			left,
+			cameraFacing,
+			views,
+			scanBarMap,
+			callback
+		)
+	}).catch(() => {
+		if (hasFail) {
+			const result : CameraOpenFailResult = { errCode: 1, errMsg: "权限被拒绝" }
+			failFn!(result)
+		}
+		if (hasComplete) {
+			const result : CameraOpenFailResult = { errCode: 1, errMsg: "权限被拒绝" }
+			completeFn!(result)
+		}
+	})
+}
+
+export const closeCamera = () => CameraView.closeCamera()
+
+export const takePicture = (callback : (path : string | null) => void) => CameraView.takePicture(callback)
+
+export const updateViews = (views : Array<View>) => CameraView.updateViews(viewsToMaps(views))
+
+export const addView = (viewConfig : View) => CameraView.addView(viewToMap(viewConfig))
+
+export const updateView = (uid : string, viewConfig : View) => CameraView.updateView(uid, viewToMap(viewConfig))
+
+export const removeView = (uid : string) => CameraView.removeView(uid)
+
+export const clearViews = () => CameraView.clearViews()
+
+export const switchCamera = () => CameraView.switchCamera()
+
+// ============ 扫码模式API ============
+
+/**
+ * 启动扫码模式
+ * 必须在相机显示后调用
+ * @returns 是否启动成功
+ */
+export const startScanMode = () : boolean => CameraView.startScanMode()
+
+/**
+ * 停止扫码模式
+ * @returns 是否停止成功
+ */
+export const stopScanMode = () : boolean => CameraView.stopScanMode()
+
+/**
+ * 获取当前帧用于扫码（核心API）
+ * 快速返回最新的一帧数据，转换为JPEG格式的Base64字符串
+ * 该方法为同步调用，会快速返回，适合频繁调用（如每秒多次调用）
+ * @param quality JPEG压缩质量 (1-100)，建议80-90以平衡质量和性能，默认85
+ * @returns Base64编码的JPEG图片数据，如果获取失败返回null
+ */
+export function getScanFrame(quality ?: number) : string | null {
+	return CameraView.getScanFrame((quality ?? 85).toInt())
+}
+
+/**
+ * 检查扫码模式是否正在运行
+ * @returns true表示扫码模式正在运行
+ */
+export const isScanModeActive = () : boolean => CameraView.isScanModeActive()
+
+/**
+ * 动态显示扫描条（相机保持运行，仅创建/重建扫描条并启动动画）
+ */
+export const showScanBar = (options : ScanBarOptions) : void => {
+	CameraView.showScanBar(scanBarToMap(options))
+}
+
+/**
+ * 动态隐藏扫描条（停止动画并从相机容器中移除，相机保持运行）
+ */
+export const hideScanBar = () : void => {
+	CameraView.hideScanBar()
+}

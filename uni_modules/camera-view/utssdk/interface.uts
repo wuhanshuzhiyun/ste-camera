@@ -1,0 +1,285 @@
+/**
+ * 视图元素类型
+ */
+export type View = {
+	uid ?: string;
+	/**
+	 * 视图类型：text 文本 | image 图片
+	 */
+	type : "text" | "image";
+
+	/**
+	 * 文本内容（当 type 为"text"时使用）
+	 */
+	text ?: string;
+
+	/**
+	 * 图片路径或 URL（当 type 为"image"时使用）
+	 */
+	image ?: string;
+
+	/**
+	 * 是否为水印（拍照时在照片中显示）
+	 */
+	watermark ?: boolean;
+
+	/**
+	 * 样式配置
+	 */
+	style ?: ViewStyle;
+}
+
+/**
+ * 视图样式配置
+ */
+export type ViewStyle = {
+	/**
+	 * 元素距离顶部位置
+	 */
+	top ?: number;
+	/**
+	 * 元素距离左侧位置（只对图片生效）
+	 */
+	left ?: number;
+
+	/**
+	 * 字体大小
+	 */
+	fontSize ?: number;
+
+	/**
+	 * 字体颜色（十六进制颜色代码，如"#FFFFFF"）
+	 */
+	fontColor ?: string;
+
+	/**
+	 * 字体样式（normal | italic）
+	 */
+	fontStyle ?: "normal" | "italic";
+
+	/**
+	 * 字体粗细（normal | bold | 100-900）
+	 */
+	fontWeight ?: string;
+
+	/**
+	 * 文本水平对齐方式（相对于弹窗位置）
+	 */
+	textAlign ?: "left" | "center" | "right";
+	
+	/**
+	 * 水平对齐偏移量
+	 */
+	textOffset ?: number;
+
+	/**
+	 * 图片宽度
+	 */
+	width ?: number;
+
+	/**
+	 * 图片高度
+	 */
+	height ?: number;
+
+}
+
+/**
+ * 扫码模式扫描条配置
+ */
+export type ScanBarOptions = {
+	/**
+	 * 扫描条图片路径或 URL（必填，扫描条使用图片展示）
+	 */
+	image ?: string;
+
+	/**
+	 * 扫描条宽度，相对于相机窗口宽度的百分比（0-100），默认 80
+	 */
+	widthPercent ?: number;
+
+	/**
+	 * 开始扫描位置：扫描条出现的位置，相对于窗口顶部（dp），默认 30
+	 */
+	startY ?: number;
+
+	/**
+	 * 结束扫描位置：扫描条消失的位置，相对于窗口顶部（dp），需大于 startY
+	 */
+	endY ?: number;
+}
+
+/**
+ * 相机打开成功结果
+ */
+export type CameraOpenSuccessResult = {
+	/**
+	 * 当前使用的摄像头：front 前置 | back 后置
+	 */
+	cameraFacing: "front" | "back";
+}
+
+/**
+ * 相机打开失败结果
+ */
+export type CameraOpenFailResult = {
+	/**
+	 * 错误码：1=权限被拒绝，2=相机被占用，3=未知错误
+	 */
+	errCode: number;
+	/**
+	 * 错误信息
+	 */
+	errMsg: string;
+}
+
+/**
+ * 相机配置选项
+ */
+export type CameraOptions = {
+	/**
+	 * 相机页面的宽度（dp），默认值为屏幕宽度
+	 */
+	width ?: number;
+
+	/**
+	 * 相机页面的高度（dp），默认值为屏幕高度
+	 */
+	height ?: number;
+
+	/**
+	 * 相机页面的顶部位置（dp），默认值为 0
+	 */
+	top ?: number;
+
+	/**
+	 * 相机页面的左侧位置（dp），默认值为 0
+	 */
+	left ?: number;
+
+	/**
+	 * 初始摄像头（front: 前置, back: 后置），默认后置
+	 */
+	cameraFacing ?: "front" | "back";
+
+	/**
+	 * 在窗口中显示的其他元素（如按钮、提示文字等）
+	 */
+	views ?: View[];
+
+	/**
+	 * 扫码模式扫描条配置（仅在扫码模式下生效）
+	 */
+	scanBar ?: ScanBarOptions;
+
+	/**
+	 * 相机打开成功回调（非必传）
+	 */
+	success ?: (result: CameraOpenSuccessResult) => void;
+
+	/**
+	 * 相机打开失败回调（非必传）
+	 */
+	fail ?: (result: CameraOpenFailResult) => void;
+
+	/**
+	 * 相机打开完成回调，无论成功失败都会调用（非必传）
+	 */
+	complete ?: (result: CameraOpenSuccessResult | CameraOpenFailResult) => void;
+}
+
+/**
+ * 显示相机页面
+ * @param options 相机配置选项
+ */
+export type showCamera = (options ?: CameraOptions) => void
+
+/**
+ * 关闭相机页面
+ */
+export type closeCamera = () => void
+
+/**
+ * 拍照获取图片
+ * @param callback 拍照回调函数，返回图片路径
+ */
+export type takePicture = (callback: (path: string | null) => void) => void
+
+/**
+ * 重新设置自定义视图元素数组
+ * @param views 新的视图元素配置数组，会先清除原有视图再添加新视图
+ */
+export type updateViews = (views: View[]) => void
+
+/**
+ * 添加单个自定义视图元素
+ * @param viewConfig 视图配置
+ */
+export type addView = (viewConfig: View) => void
+
+/**
+ * 根据 uid 更新单个自定义视图元素
+ * @param uid 视图唯一标识
+ * @param viewConfig 新的视图配置
+ */
+export type updateView = (uid: string, viewConfig: View) => void
+
+/**
+ * 根据 uid 移除单个自定义视图元素
+ * @param uid 视图唯一标识
+ */
+export type removeView = (uid: string) => void
+
+/**
+ * 移除所有自定义视图元素
+ */
+export type clearViews = () => void
+
+/**
+ * 切换前后摄像头
+ */
+export type switchCamera = () => void
+
+// ============ 扫码模式相关API ============
+
+/**
+ * 启动扫码模式
+ * 初始化预览回调，准备接收摄像头帧数据
+ * 必须在相机显示后调用
+ * @returns 是否启动成功
+ */
+export type startScanMode = () => boolean
+
+/**
+ * 停止扫码模式
+ * 释放扫码相关资源
+ * @returns 是否停止成功
+ */
+export type stopScanMode = () => boolean
+
+/**
+ * 获取当前帧用于扫码（核心API）
+ * 快速返回最新的一帧数据，转换为JPEG格式的Base64字符串
+ * 该方法为同步调用，会快速返回，适合频繁调用（如每秒多次调用）
+ * @param quality JPEG压缩质量 (1-100)，建议80-90以平衡质量和性能，默认85
+ * @returns Base64编码的JPEG图片数据，如果获取失败返回null
+ */
+export type getScanFrame = (quality?: number) => string | null
+
+/**
+ * 检查扫码模式是否正在运行
+ * @returns true表示扫码模式正在运行
+ */
+export type isScanModeActive = () => boolean
+
+/**
+ * 动态显示扫描条（相机保持运行，仅创建/重建扫描条并启动动画）
+ * 若已有扫描条则先移除再重建，保证配置总是最新的。
+ * @param options 扫描条配置
+ */
+export type showScanBar = (options: ScanBarOptions) => void
+
+/**
+ * 动态隐藏扫描条（停止动画并从相机容器中移除，相机保持运行）
+ */
+export type hideScanBar = () => void

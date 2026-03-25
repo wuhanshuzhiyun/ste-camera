@@ -1,0 +1,35 @@
+{
+	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "camera-view 插件 Demo",
+				"navigationBarBackgroundColor": "#0d1117",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/camera-test/camera-test",
+			"style": {
+				"navigationBarTitleText": "全量测试",
+				"navigationBarBackgroundColor": "#0d1117",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/scan-mode/scan-mode",
+			"style": {
+				"navigationBarTitleText": "扫码/拍照",
+				"navigationBarBackgroundColor": "#0d1117",
+				"navigationBarTextStyle": "white"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "uni-app",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	},
+	"uniIdRouter": {}
+}
