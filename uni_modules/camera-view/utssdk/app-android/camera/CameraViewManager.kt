@@ -357,7 +357,87 @@ object CameraViewManager {
             applyTextStyle(activity, style)
             if (uid != null) tag = uid
         }
-        cameraContainer?.addView(textView)
+        // 设置旋转后的 layoutParams
+        val style = viewConfig["style"] as? Map<*, *>
+        val layoutParams = createTextLayoutParams(activity, style)
+        cameraContainer?.addView(textView, layoutParams)
+    }
+
+    /**
+     * 为 TextView 创建带旋转的 LayoutParams
+     */
+    private fun createTextLayoutParams(activity: Activity, style: Map<*, *>?): FrameLayout.LayoutParams {
+        val rotation = (style?.get("rotation") as? Number)?.toInt() ?: 0
+        val textAlign = style?.get("textAlign") as? String ?: DEFAULT_TEXT_ALIGN
+        val textOffset = (style?.get("textOffset") as? Number)?.toInt() ?: 0
+        val topMargin = (style?.get("top") as? Number)?.toInt() ?: 0
+        val topMarginPx = dipToPx(activity, topMargin)
+        val offsetPx = dipToPx(activity, textOffset)
+
+        return when (rotation) {
+            0 -> {
+                // rotation=0 (top)：顶部朝上，top=距容器顶部
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    this.topMargin = topMarginPx
+                    // textAlign 调整
+                    when (textAlign) {
+                        "center" -> { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; leftMargin = offsetPx }
+                        "right"  -> { gravity = Gravity.TOP or Gravity.END; rightMargin = -offsetPx }
+                        else     -> { gravity = Gravity.TOP or Gravity.START; leftMargin = offsetPx }
+                    }
+                }
+            }
+            90 -> {
+                // rotation=90 (right)：顶部朝右，top=距容器右侧
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    // top 控制距容器右侧的距离
+                    this.rightMargin = topMarginPx
+                    when (textAlign) {
+                        "center" -> { gravity = Gravity.CENTER_VERTICAL or Gravity.END; this.leftMargin = offsetPx }
+                        "right"  -> { gravity = Gravity.BOTTOM or Gravity.END; this.bottomMargin = offsetPx }
+                        else     -> { gravity = Gravity.TOP or Gravity.END; this.topMargin = offsetPx }
+                    }
+                }
+            }
+            180 -> {
+                // rotation=180 (bottom)：顶部朝下，top=距容器底部
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    // top 控制距容器底部的距离
+                    this.bottomMargin = topMarginPx
+                    when (textAlign) {
+                        "center" -> { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; this.rightMargin = offsetPx }
+                        "right"  -> { gravity = Gravity.BOTTOM or Gravity.START; this.leftMargin = -offsetPx }
+                        else     -> { gravity = Gravity.BOTTOM or Gravity.END; this.rightMargin = offsetPx }
+                    }
+                }
+            }
+            270 -> {
+                // rotation=270 (left)：顶部朝左，top=距容器左侧
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    // top 控制距容器左侧的距离
+                    this.leftMargin = topMarginPx
+                    when (textAlign) {
+                        "center" -> { gravity = Gravity.CENTER_VERTICAL or Gravity.START; this.rightMargin = offsetPx }
+                        "right"  -> { gravity = Gravity.TOP or Gravity.START; this.topMargin = offsetPx }
+                        else     -> { gravity = Gravity.BOTTOM or Gravity.START; this.bottomMargin = offsetPx }
+                    }
+                }
+            }
+            else -> FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     private fun TextView.applyTextStyle(activity: Activity, style: Map<*, *>?) {
@@ -377,49 +457,57 @@ object CameraViewManager {
         val fontWeight = style?.get("fontWeight") as? String ?: DEFAULT_FONT_WEIGHT
         paint.isFakeBoldText = fontWeight == "bold" || (fontWeight.toIntOrNull() ?: 0) >= 700
 
-        // 应用位置
-        val textAlign = style?.get("textAlign") as? String ?: DEFAULT_TEXT_ALIGN
-        val textOffset = (style?.get("textOffset") as? Number)?.toInt() ?: 0
-        val topMargin = style?.get("top") as? Number ?: 0
-
-        layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.TOP or Gravity.START
-            this.topMargin = dipToPx(activity, topMargin.toInt())
-        }
-
-        cameraContainer?.post {
-            val containerWidth = cameraContainer?.width ?: 0
-            if (containerWidth > 0) {
-                val params = layoutParams as FrameLayout.LayoutParams
-                val offsetPx = dipToPx(activity, textOffset)
-                when (textAlign) {
-                    "center" -> { params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; params.leftMargin = offsetPx }
-                    "right" -> { params.gravity = Gravity.TOP or Gravity.END; params.rightMargin = -offsetPx }
-                    else -> { params.gravity = Gravity.TOP or Gravity.START; params.leftMargin = offsetPx }
-                }
-                layoutParams = params
-            }
-        }
+        // 设置旋转角度
+        val rotation = (style?.get("rotation") as? Number)?.toInt() ?: 0
+        this.rotation = rotation.toFloat()
     }
 
     private fun addImageView(activity: Activity, viewConfig: Map<String, Any?>, uid: String?) {
         val style = viewConfig["style"] as? Map<*, *>
         val rawWidth = (style?.get("width") as? Number)?.toInt()
         val rawHeight = (style?.get("height") as? Number)?.toInt()
-        val topMargin = style?.get("top") as? Number ?: 0
-        val leftMargin = style?.get("left") as? Number ?: 0
+        val topMargin = (style?.get("top") as? Number)?.toInt() ?: 0
+        val leftMargin = (style?.get("left") as? Number)?.toInt() ?: 0
+        val rotation = (style?.get("rotation") as? Number)?.toInt() ?: 0
 
         val imageView = ImageView(activity).apply {
-            // 宽高都传时拉伸；否则先用占位尺寸，图片加载后再根据实际情况更新
             val initW = rawWidth?.let { dipToPx(activity, it) } ?: (rawHeight?.let { dipToPx(activity, it) } ?: dipToPx(activity, DEFAULT_IMG_WIDTH))
             val initH = rawHeight?.let { dipToPx(activity, it) } ?: (rawWidth?.let { dipToPx(activity, it) } ?: dipToPx(activity, DEFAULT_IMG_HEIGHT))
-            // 统一使用 FIT_XY：宽高都传时整体拉伸，缺一边时图片加载后会重新设置 layoutParams
             scaleType = ImageView.ScaleType.FIT_XY
 
-            layoutParams = FrameLayout.LayoutParams(initW, initH).apply {
-                gravity = Gravity.TOP or Gravity.START
-                this.topMargin = dipToPx(activity, topMargin.toInt())
-                this.leftMargin = dipToPx(activity, leftMargin.toInt())
+            // 应用旋转角度
+            this.rotation = rotation.toFloat()
+
+            // 根据旋转角度设置位置对齐
+            // rotation=0  (top)   : top=距顶, left=距左（正常）
+            // rotation=90  (right) : 顺时针90°，顶部朝右，top=距右侧, left=距顶部
+            // rotation=180 (bottom): 顶部朝下，top=距底部, left=距右侧
+            // rotation=270 (left)  : 顺时针270°，顶部朝左，top=距左侧, left=距底部
+            layoutParams = when (rotation) {
+                90 -> FrameLayout.LayoutParams(initW, initH).apply {
+                    // top → 距容器右侧；left → 距容器顶部
+                    gravity = Gravity.TOP or Gravity.END
+                    this.rightMargin = dipToPx(activity, topMargin)
+                    this.topMargin = dipToPx(activity, leftMargin)
+                }
+                180 -> FrameLayout.LayoutParams(initW, initH).apply {
+                    // top → 距容器底部；left → 距容器右侧
+                    gravity = Gravity.BOTTOM or Gravity.END
+                    this.bottomMargin = dipToPx(activity, topMargin)
+                    this.rightMargin = dipToPx(activity, leftMargin)
+                }
+                270 -> FrameLayout.LayoutParams(initW, initH).apply {
+                    // top → 距容器左侧；left → 距容器底部
+                    gravity = Gravity.BOTTOM or Gravity.START
+                    this.leftMargin = dipToPx(activity, topMargin)
+                    this.bottomMargin = dipToPx(activity, leftMargin)
+                }
+                else -> FrameLayout.LayoutParams(initW, initH).apply {
+                    // rotation=0: 正常方向
+                    gravity = Gravity.TOP or Gravity.START
+                    this.topMargin = dipToPx(activity, topMargin)
+                    this.leftMargin = dipToPx(activity, leftMargin)
+                }
             }
 
             if (uid != null) tag = uid
@@ -430,11 +518,6 @@ object CameraViewManager {
                     bitmap ?: return@ImageLoadRunnable
                     this.setImageBitmap(bitmap)
 
-                    // 根据传入的宽高决定最终尺寸：
-                    //   - 都未传：使用图片实际像素宽高（转 dp 后转 px）
-                    //   - 都传了：保持已设置的拉伸尺寸，无需修改
-                    //   - 只传宽：高 = 宽 × (图片高/图片宽)
-                    //   - 只传高：宽 = 高 × (图片宽/图片高)
                     if (rawWidth != null && rawHeight != null) return@ImageLoadRunnable
 
                     val bmpW = bitmap.width
@@ -445,18 +528,15 @@ object CameraViewManager {
                     val finalH: Int
                     when {
                         rawWidth == null && rawHeight == null -> {
-                            // 使用图片实际宽高（px，不做 dp→px 转换，直接用像素值会过大；按密度转为逻辑尺寸再转回 px）
                             finalW = bmpW
                             finalH = bmpH
                         }
                         rawWidth != null -> {
-                            // 只传了宽，高按比例
                             val wPx = dipToPx(activity, rawWidth)
                             finalW = wPx
                             finalH = (wPx.toFloat() * bmpH / bmpW).toInt().coerceAtLeast(1)
                         }
                         else -> {
-                            // 只传了高，宽按比例
                             val hPx = dipToPx(activity, rawHeight!!)
                             finalH = hPx
                             finalW = (hPx.toFloat() * bmpW / bmpH).toInt().coerceAtLeast(1)

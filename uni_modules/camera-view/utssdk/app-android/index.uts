@@ -47,6 +47,20 @@ function styleToMap(style : ViewStyle) : Map<string, Any> {
 	if (widthVal != null) result.put("width", widthVal)
 	const heightVal = style.height
 	if (heightVal != null) result.put("height", heightVal)
+	const rotationVal = style.rotation
+	if (rotationVal != null) {
+		// 将字符串转换为数值：top→0, right→90, bottom→180, left→270
+		const rotationMap : Map<string, number> = new Map([
+			["top", 0],
+			["right", 90],
+			["bottom", 180],
+			["left", 270]
+		])
+		const rotationNum = rotationMap.get(rotationVal)
+		if (rotationNum != null) {
+			result.put("rotation", rotationNum)
+		}
+	}
 	return result
 }
 

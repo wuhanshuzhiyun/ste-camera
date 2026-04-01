@@ -66,7 +66,7 @@ export type ViewStyle = {
 	 * 文本水平对齐方式（相对于弹窗位置）
 	 */
 	textAlign ?: "left" | "center" | "right";
-	
+
 	/**
 	 * 水平对齐偏移量
 	 */
@@ -81,6 +81,12 @@ export type ViewStyle = {
 	 * 图片高度
 	 */
 	height ?: number;
+
+	/**
+	 * 旋转方向：top(0°) / right(90°) / bottom(180°) / left(270°)
+	 * 位置与对齐方式以旋转后的坐标系为准
+	 */
+	rotation ?: "top" | "right" | "bottom" | "left";
 
 }
 
@@ -116,7 +122,7 @@ export type CameraOpenSuccessResult = {
 	/**
 	 * 当前使用的摄像头：front 前置 | back 后置
 	 */
-	cameraFacing: "front" | "back";
+	cameraFacing : "front" | "back";
 }
 
 /**
@@ -126,11 +132,11 @@ export type CameraOpenFailResult = {
 	/**
 	 * 错误码：1=权限被拒绝，2=相机被占用，3=未知错误
 	 */
-	errCode: number;
+	errCode : number;
 	/**
 	 * 错误信息
 	 */
-	errMsg: string;
+	errMsg : string;
 }
 
 /**
@@ -175,17 +181,17 @@ export type CameraOptions = {
 	/**
 	 * 相机打开成功回调（非必传）
 	 */
-	success ?: (result: CameraOpenSuccessResult) => void;
+	success ?: (result : CameraOpenSuccessResult) => void;
 
 	/**
 	 * 相机打开失败回调（非必传）
 	 */
-	fail ?: (result: CameraOpenFailResult) => void;
+	fail ?: (result : CameraOpenFailResult) => void;
 
 	/**
 	 * 相机打开完成回调，无论成功失败都会调用（非必传）
 	 */
-	complete ?: (result: CameraOpenSuccessResult | CameraOpenFailResult) => void;
+	complete ?: (result : CameraOpenSuccessResult | CameraOpenFailResult) => void;
 }
 
 /**
@@ -203,32 +209,32 @@ export type closeCamera = () => void
  * 拍照获取图片
  * @param callback 拍照回调函数，返回图片路径
  */
-export type takePicture = (callback: (path: string | null) => void) => void
+export type takePicture = (callback : (path : string | null) => void) => void
 
 /**
  * 重新设置自定义视图元素数组
  * @param views 新的视图元素配置数组，会先清除原有视图再添加新视图
  */
-export type updateViews = (views: View[]) => void
+export type updateViews = (views : View[]) => void
 
 /**
  * 添加单个自定义视图元素
  * @param viewConfig 视图配置
  */
-export type addView = (viewConfig: View) => void
+export type addView = (viewConfig : View) => void
 
 /**
  * 根据 uid 更新单个自定义视图元素
  * @param uid 视图唯一标识
  * @param viewConfig 新的视图配置
  */
-export type updateView = (uid: string, viewConfig: View) => void
+export type updateView = (uid : string, viewConfig : View) => void
 
 /**
  * 根据 uid 移除单个自定义视图元素
  * @param uid 视图唯一标识
  */
-export type removeView = (uid: string) => void
+export type removeView = (uid : string) => void
 
 /**
  * 移除所有自定义视图元素
@@ -264,7 +270,7 @@ export type stopScanMode = () => boolean
  * @param quality JPEG压缩质量 (1-100)，建议80-90以平衡质量和性能，默认85
  * @returns Base64编码的JPEG图片数据，如果获取失败返回null
  */
-export type getScanFrame = (quality?: number) => string | null
+export type getScanFrame = (quality ?: number) => string | null
 
 /**
  * 检查扫码模式是否正在运行
@@ -277,7 +283,7 @@ export type isScanModeActive = () => boolean
  * 若已有扫描条则先移除再重建，保证配置总是最新的。
  * @param options 扫描条配置
  */
-export type showScanBar = (options: ScanBarOptions) => void
+export type showScanBar = (options : ScanBarOptions) => void
 
 /**
  * 动态隐藏扫描条（停止动画并从相机容器中移除，相机保持运行）

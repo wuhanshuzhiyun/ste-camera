@@ -114,6 +114,23 @@
 					</view>
 				</view>
 
+				<!-- 旋转视图 -->
+				<view class="sub-section">
+					<text class="sub-title">旋转视图（rotation）</text>
+					<view class="btn-row">
+						<button class="btn btn-primary" @click="onAddRotationTop">top (0°)</button>
+						<button class="btn btn-primary" @click="onAddRotationRight">right (90°)</button>
+					</view>
+					<view class="btn-row">
+						<button class="btn btn-primary" @click="onAddRotationBottom">bottom (180°)</button>
+						<button class="btn btn-primary" @click="onAddRotationLeft">left (270°)</button>
+					</view>
+					<view class="btn-row">
+						<button class="btn btn-default" @click="onAddRotationAllDirections">四方向同时测试</button>
+						<button class="btn btn-danger" @click="onClearViews">清除</button>
+					</view>
+				</view>
+
 				<!-- 批量视图管理 -->
 				<view class="sub-section">
 					<text class="sub-title">批量管理</text>
@@ -737,6 +754,119 @@ const onAddItalicText = () => {
 		}
 	});
 	log('添加斜体文本视图', 'success');
+};
+
+// ===== 旋转视图测试 =====
+
+/** rotation=0 top：顶部朝上，top=距顶，textAlign 正常 */
+const onAddRotationTop = () => {
+	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	addView({
+		type: 'text',
+		text: '↑ top (0°)',
+		watermark: false,
+		style: {
+			top: 20,
+			fontColor: '#FFFFFF',
+			fontWeight: 'bold',
+			textAlign: 'center',
+			fontSize: 18,
+			rotation: 'top'
+		}
+	});
+	log('添加旋转视图 rotation="top"（0°）', 'success');
+};
+
+/** rotation="right"：顶部朝右，top=距右侧 */
+const onAddRotationRight = () => {
+	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	addView({
+		type: 'text',
+		text: '→ right (90°)',
+		watermark: false,
+		style: {
+			top: 20,
+			fontColor: '#FFD700',
+			fontWeight: 'bold',
+			textAlign: 'left',
+			fontSize: 18,
+			rotation: 'right'
+		}
+	});
+	log('添加旋转视图 rotation="right"（90°），top=距右侧20dp，textAlign=left→靠近顶部', 'success');
+};
+
+/** rotation="bottom"：顶部朝下，top=距底部 */
+const onAddRotationBottom = () => {
+	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	addView({
+		type: 'text',
+		text: '↓ bottom (180°)',
+		watermark: false,
+		style: {
+			top: 20,
+			fontColor: '#FF6B6B',
+			fontWeight: 'bold',
+			textAlign: 'center',
+			fontSize: 18,
+			rotation: 'bottom'
+		}
+	});
+	log('添加旋转视图 rotation="bottom"（180°），top=距底部20dp', 'success');
+};
+
+/** rotation="left"：顶部朝左，top=距左侧 */
+const onAddRotationLeft = () => {
+	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	addView({
+		type: 'text',
+		text: '← left (270°)',
+		watermark: false,
+		style: {
+			top: 20,
+			fontColor: '#00BFFF',
+			fontWeight: 'bold',
+			textAlign: 'left',
+			fontSize: 18,
+			rotation: 'left'
+		}
+	});
+	log('添加旋转视图 rotation="left"（270°），top=距左侧20dp，textAlign=left→靠近底部', 'success');
+};
+
+/** 四方向同时添加，直观对比 */
+const onAddRotationAllDirections = () => {
+	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	clearViews();
+	// top (0°)：顶部居中，白色
+	addView({
+		type: 'text',
+		text: '↑ top',
+		watermark: false,
+		style: { top: 16, fontColor: '#FFFFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'top' }
+	});
+	// right (90°)：距右侧16dp，黄色
+	addView({
+		type: 'text',
+		text: '→ right',
+		watermark: false,
+		style: { top: 16, fontColor: '#FFD700', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'right' }
+	});
+	// bottom (180°)：距底部16dp，红色
+	addView({
+		type: 'text',
+		text: '↓ bottom',
+		watermark: false,
+		style: { top: 16, fontColor: '#FF6B6B', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'bottom' }
+	});
+	// left (270°)：距左侧16dp，蓝色
+	addView({
+		type: 'text',
+		text: '← left',
+		watermark: false,
+		style: { top: 16, fontColor: '#00BFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'left' }
+	});
+	log('已添加四方向旋转视图（top白/right黄/bottom红/left蓝）', 'success');
 };
 
 const onAddImageView = () => {
