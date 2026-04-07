@@ -184,7 +184,9 @@ export const showCamera = (options ?: CameraOptions) : void => {
 
 export const closeCamera = () => CameraView.closeCamera()
 
-export const takePicture = (callback : (path : string | null) => void) => CameraView.takePicture(callback)
+export const takePicture = (callback : (path : string | null) => void) => {
+	CameraView.takePicture((result : string | null) => callback(result))
+}
 
 export const updateViews = (views : Array<View>) => CameraView.updateViews(viewsToMaps(views))
 

@@ -788,7 +788,7 @@ const onAddRotationRight = () => {
 			top: 20,
 			fontColor: '#FFD700',
 			fontWeight: 'bold',
-			textAlign: 'left',
+			textAlign: 'center',
 			fontSize: 18,
 			rotation: 'right'
 		}
@@ -826,7 +826,7 @@ const onAddRotationLeft = () => {
 			top: 20,
 			fontColor: '#00BFFF',
 			fontWeight: 'bold',
-			textAlign: 'left',
+			textAlign: 'center',
 			fontSize: 18,
 			rotation: 'left'
 		}
@@ -843,28 +843,28 @@ const onAddRotationAllDirections = () => {
 		type: 'text',
 		text: '↑ top',
 		watermark: false,
-		style: { top: 16, fontColor: '#FFFFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'top' }
+		style: { top: 0, fontColor: '#FFFFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'top' }
 	});
 	// right (90°)：距右侧16dp，黄色
 	addView({
 		type: 'text',
 		text: '→ right',
 		watermark: false,
-		style: { top: 16, fontColor: '#FFD700', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'right' }
+		style: { top: -20, fontColor: '#FFD700', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'right' }
 	});
 	// bottom (180°)：距底部16dp，红色
 	addView({
 		type: 'text',
 		text: '↓ bottom',
 		watermark: false,
-		style: { top: 16, fontColor: '#FF6B6B', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'bottom' }
+		style: { top: 0, fontColor: '#FF6B6B', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'bottom' }
 	});
 	// left (270°)：距左侧16dp，蓝色
 	addView({
 		type: 'text',
 		text: '← left',
 		watermark: false,
-		style: { top: 16, fontColor: '#00BFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'left' }
+		style: { top: 0, fontColor: '#00BFFF', fontWeight: 'bold', textAlign: 'center', fontSize: 16, rotation: 'left' }
 	});
 	log('已添加四方向旋转视图（top白/right黄/bottom红/left蓝）', 'success');
 };
