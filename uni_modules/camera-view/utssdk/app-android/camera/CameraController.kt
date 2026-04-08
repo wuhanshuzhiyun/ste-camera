@@ -232,11 +232,11 @@ object CameraController {
         camera = null
     }
 
-    fun takePicture(callback: (String?) -> Unit) {
+    fun takePicture(callback: TakePictureCallback) {
         val currentCamera = camera
         if (currentCamera == null) {
             console.log("相机未启动，无法拍照")
-            callback(null)
+            callback.onFail()
             return
         }
         try {
@@ -244,11 +244,15 @@ object CameraController {
                 Camera.ShutterCallback { },
                 null,
                 null,
-                Camera.PictureCallback { data, _ -> processCapturedImage(currentCamera, data, callback) }
+                Camera.PictureCallback { data, _ ->
+                    processCapturedImage(currentCamera, data) { path ->
+                        if (path != null) callback.onSuccess(path) else callback.onFail()
+                    }
+                }
             )
         } catch (e: Exception) {
             console.log("拍照失败：${e.message}")
-            callback(null)
+            callback.onFail()
         }
     }
 

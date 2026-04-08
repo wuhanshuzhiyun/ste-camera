@@ -161,7 +161,7 @@ function stopAutoScan() {
 // ===== 拍照功能 =====
 function takePictureAction() {
 	takePicture((path) => {
-		if (path) {
+		if (path && path.length > 0) {
 			emit('take-picture', path);
 		} else {
 			uni.showToast({ title: '拍照失败', icon: 'none' });

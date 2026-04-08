@@ -84,7 +84,7 @@ function viewToMap(view : View) : Map<string, Any> {
 }
 
 function viewsToMaps(views : Array<View> | null) : Array<Map<string, Any>> | null {
-	if (views == null || views.length === 0) return null
+	if (views == null || views.length == 0) return null
 	const result = new Array<Map<string, Any>>()
 	for (let i = 0; i < views.length; i++) {
 		result.push(viewToMap(views[i]))
@@ -184,8 +184,12 @@ export const showCamera = (options ?: CameraOptions) : void => {
 
 export const closeCamera = () => CameraView.closeCamera()
 
-export const takePicture = (callback : (path : string | null) => void) => {
-	CameraView.takePicture((result : string | null) => callback(result))
+export const takePicture = (callback : (path : string) => void) => {
+	const cb = CameraView.createTakePictureCallback(
+		(path : string) => { callback(path) },
+		() => { callback("") }
+	)
+	CameraView.takePicture(cb)
 }
 
 export const updateViews = (views : Array<View>) => CameraView.updateViews(viewsToMaps(views))

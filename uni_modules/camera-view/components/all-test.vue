@@ -411,8 +411,8 @@ const onShowCamera = async () => {
 					}
 				}
 			],
-			success: () => {
-				console.log('2222222222222222');
+			success: (res) => {
+				console.log('2222222222222222', res);
 				cameraVisible.value = true;
 				cameraFacing.value = 'back';
 				log('相机已显示（全屏60%高，后置）', 'success');
@@ -587,7 +587,7 @@ const onTakePicture = () => {
 	}
 	log('正在拍照...');
 	takePicture((path) => {
-		if (path) {
+		if (path && path.length > 0) {
 			const filePath = path.startsWith('file://') ? path : 'file://' + path;
 			lastPhoto.value = filePath;
 			lastPhotoPath.value = path;
@@ -597,7 +597,7 @@ const onTakePicture = () => {
 				icon: 'success'
 			});
 		} else {
-			log('拍照失败（回调返回 null）', 'error');
+			log('拍照失败（回调返回空字符串）', 'error');
 			uni.showToast({
 				title: '拍照失败',
 				icon: 'none'
@@ -649,7 +649,7 @@ const onTakeWithWatermark = () => {
 	// 稍等一下让视图更新
 	setTimeout(() => {
 		takePicture((path) => {
-			if (path) {
+			if (path && path.length > 0) {
 				const filePath = path.startsWith('file://') ? path : 'file://' + path;
 				lastPhoto.value = filePath;
 				lastPhotoPath.value = path;
@@ -760,7 +760,10 @@ const onAddItalicText = () => {
 
 /** rotation=0 top：顶部朝上，top=距顶，textAlign 正常 */
 const onAddRotationTop = () => {
-	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
 	addView({
 		type: 'text',
 		text: '↑ top (0°)',
@@ -779,7 +782,10 @@ const onAddRotationTop = () => {
 
 /** rotation="right"：顶部朝右，top=距右侧 */
 const onAddRotationRight = () => {
-	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
 	addView({
 		type: 'text',
 		text: '→ right (90°)',
@@ -798,7 +804,10 @@ const onAddRotationRight = () => {
 
 /** rotation="bottom"：顶部朝下，top=距底部 */
 const onAddRotationBottom = () => {
-	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
 	addView({
 		type: 'text',
 		text: '↓ bottom (180°)',
@@ -817,7 +826,10 @@ const onAddRotationBottom = () => {
 
 /** rotation="left"：顶部朝左，top=距左侧 */
 const onAddRotationLeft = () => {
-	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
 	addView({
 		type: 'text',
 		text: '← left (270°)',
@@ -836,7 +848,10 @@ const onAddRotationLeft = () => {
 
 /** 四方向同时添加，直观对比 */
 const onAddRotationAllDirections = () => {
-	if (!cameraVisible.value) { log('相机未开启', 'warn'); return; }
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
 	clearViews();
 	// top (0°)：顶部居中，白色
 	addView({
@@ -1257,20 +1272,20 @@ const onSceneWatermarkPhoto = async () => {
 				]);
 				log('水印已设置，1秒后拍照', 'info');
 				setTimeout(() => {
-					takePicture((path) => {
-						if (path) {
-							const filePath = path.startsWith('file://') ? path : 'file://' + path;
-							lastPhoto.value = filePath;
-							lastPhotoPath.value = path;
-							log('场景拍照成功：' + path.split('/').pop(), 'success');
-							uni.showToast({
-								title: '拍照成功，查看预览',
-								icon: 'success'
-							});
-						} else {
-							log('场景拍照失败', 'error');
-						}
-					});
+				takePicture((path) => {
+					if (path && path.length > 0) {
+						const filePath = path.startsWith('file://') ? path : 'file://' + path;
+						lastPhoto.value = filePath;
+						lastPhotoPath.value = path;
+						log('场景拍照成功：' + path.split('/').pop(), 'success');
+						uni.showToast({
+							title: '拍照成功，查看预览',
+							icon: 'success'
+						});
+					} else {
+						log('场景拍照失败', 'error');
+					}
+				});
 				}, 1000);
 			}
 		});
@@ -1465,20 +1480,20 @@ const onSceneFrontSelfie = async () => {
 			setTimeout(() => {
 				if (cameraVisible.value) {
 					log('3秒倒计时结束，自动拍照', 'info');
-					takePicture((path) => {
-						if (path) {
-							const filePath = path.startsWith('file://') ? path : 'file://' + path;
-							lastPhoto.value = filePath;
-							lastPhotoPath.value = path;
-							log('前置自拍成功：' + path.split('/').pop(), 'success');
-							uni.showToast({
-								title: '自拍成功！',
-								icon: 'success'
-							});
-						} else {
-							log('前置自拍失败', 'error');
-						}
-					});
+				takePicture((path) => {
+					if (path && path.length > 0) {
+						const filePath = path.startsWith('file://') ? path : 'file://' + path;
+						lastPhoto.value = filePath;
+						lastPhotoPath.value = path;
+						log('前置自拍成功：' + path.split('/').pop(), 'success');
+						uni.showToast({
+							title: '自拍成功！',
+							icon: 'success'
+						});
+					} else {
+						log('前置自拍失败', 'error');
+					}
+				});
 				}
 			}, 3000);
 			uni.showToast({

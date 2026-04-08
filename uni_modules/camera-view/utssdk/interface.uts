@@ -209,7 +209,7 @@ export type closeCamera = () => void
  * 拍照获取图片
  * @param callback 拍照回调函数，返回图片路径
  */
-export type takePicture = (callback : (path : string | null) => void) => void
+export type takePicture = (callback : (path : string) => void) => void
 
 /**
  * 重新设置自定义视图元素数组

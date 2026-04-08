@@ -145,13 +145,31 @@ object CameraView {
         }
     }
 
-    fun takePicture(callback: (String?) -> Unit) {
+    fun takePicture(callback: TakePictureCallback) {
         if (!CameraController.isCameraAvailable()) {
             console.log("相机未启动，无法拍照")
-            callback(null)
+            callback.onFail()
             return
         }
         CameraController.takePicture(callback)
+    }
+
+    /**
+     * 创建拍照回调
+     * 供 UTS 层调用，将 lambda 转换为 TakePictureCallback
+     *
+     * @param onSuccess 成功回调，接收图片路径
+     * @param onFail    失败回调
+     * @return TakePictureCallback 实例
+     */
+    fun createTakePictureCallback(
+        onSuccess: ((String) -> Unit)?,
+        onFail: (() -> Unit)?
+    ): TakePictureCallback {
+        return object : TakePictureCallback {
+            override fun onSuccess(path: String) { onSuccess?.invoke(path) }
+            override fun onFail() { onFail?.invoke() }
+        }
     }
 
     fun switchCamera() {
