@@ -212,6 +212,17 @@ export type closeCamera = () => void
 export type takePicture = (callback : (path : string) => void) => void
 
 /**
+ * 开启点击对焦功能
+ * 用户点击相机画面后，相机将对焦到点击位置，并显示白色对焦框动画
+ */
+export type enableTapToFocus = () => void
+
+/**
+ * 关闭点击对焦功能
+ */
+export type disableTapToFocus = () => void
+
+/**
  * 重新设置自定义视图元素数组
  * @param views 新的视图元素配置数组，会先清除原有视图再添加新视图
  */

@@ -192,6 +192,11 @@ export const takePicture = (callback : (path : string) => void) => {
 	CameraView.takePicture(cb)
 }
 
+export const enableTapToFocus = () => CameraView.enableTapToFocus()
+
+export const disableTapToFocus = () => CameraView.disableTapToFocus()
+
+
 export const updateViews = (views : Array<View>) => CameraView.updateViews(viewsToMaps(views))
 
 export const addView = (viewConfig : View) => CameraView.addView(viewToMap(viewConfig))

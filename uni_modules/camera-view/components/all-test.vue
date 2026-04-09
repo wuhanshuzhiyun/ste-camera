@@ -17,10 +17,14 @@
 					<view :class="['status-dot', scanActive ? 'dot-blue' : 'dot-gray']"></view>
 					<text class="status-label">扫码模式：{{ scanActive ? '运行中' : '已停止' }}</text>
 				</view>
-				<view class="status-item">
-					<text class="status-label">当前镜头：{{ cameraFacing === 'front' ? '前置' : '后置' }}</text>
-				</view>
+			<view class="status-item">
+				<text class="status-label">当前镜头：{{ cameraFacing === 'front' ? '前置' : '后置' }}</text>
 			</view>
+			<view class="status-item">
+				<view :class="['status-dot', tapToFocusEnabled ? 'dot-green' : 'dot-gray']"></view>
+				<text class="status-label">点击对焦：{{ tapToFocusEnabled ? '已开启' : '已关闭' }}</text>
+			</view>
+		</view>
 
 			<!-- ===== 功能分组：基础控制 ===== -->
 			<view class="section">
@@ -244,7 +248,39 @@
 				</view>
 			</view>
 
-			<!-- ===== 功能分组：组合场景测试 ===== -->
+			<!-- ===== 功能分组：点击对焦 ===== -->
+		<view class="section">
+			<view class="section-title">
+				<text class="section-icon">🎯</text>
+				<text>点击对焦</text>
+			</view>
+			<view class="scan-desc">
+				<text class="desc-text">开启后可点击相机画面任意位置触发对焦，对焦框会在点击处显示白色动画，支持区域对焦（旧机型降级为普通自动对焦）</text>
+			</view>
+
+			<!-- 开关 -->
+			<view class="input-row">
+				<text class="input-label">点击对焦：</text>
+				<switch :checked="tapToFocusEnabled" @change="onToggleTapToFocus($event.detail.value)" :disabled="!cameraVisible" />
+				<text class="input-hint" v-if="!cameraVisible">（请先打开相机）</text>
+			</view>
+
+			<!-- 操作按钮 -->
+			<view class="btn-row">
+				<button class="btn btn-success" @click="onEnableTapToFocus" :disabled="!cameraVisible || tapToFocusEnabled">开启点击对焦</button>
+				<button class="btn btn-danger" @click="onDisableTapToFocus" :disabled="!cameraVisible || !tapToFocusEnabled">关闭点击对焦</button>
+			</view>
+			<view class="btn-row">
+				<button class="btn btn-primary" @click="onOpenCameraWithTapToFocus">打开相机并开启对焦</button>
+			</view>
+
+			<!-- 提示信息 -->
+			<view class="tap-focus-tip" v-if="tapToFocusEnabled">
+				<text class="tip-text">👆 请点击上方相机画面进行对焦测试</text>
+			</view>
+		</view>
+
+		<!-- ===== 功能分组：组合场景测试 ===== -->
 			<view class="section">
 				<view class="section-title">
 					<text class="section-icon">🧪</text>
@@ -301,7 +337,9 @@ import {
 	startScanMode,
 	stopScanMode,
 	getScanFrame,
-	isScanModeActive
+	isScanModeActive,
+	enableTapToFocus,
+	disableTapToFocus
 } from '@/uni_modules/camera-view';
 
 // ===== 状态 =====
@@ -310,6 +348,9 @@ const scanActive = ref(false);
 const cameraFacing = ref('back');
 const lastPhoto = ref('');
 const lastPhotoPath = ref('');
+
+// 点击对焦
+const tapToFocusEnabled = ref(false);
 
 // 文本配置
 const textContent = ref('相机叠加层');
@@ -554,6 +595,7 @@ const onCloseCamera = () => {
 	}
 	closeCamera();
 	cameraVisible.value = false;
+	tapToFocusEnabled.value = false;
 	log('相机已关闭', 'info');
 };
 
@@ -1504,6 +1546,98 @@ const onSceneFrontSelfie = async () => {
 	});
 };
 
+// ===== 点击对焦 =====
+
+/**
+ * 开启点击对焦
+ */
+const onEnableTapToFocus = () => {
+	if (!cameraVisible.value) {
+		log('相机未开启，请先打开相机', 'warn');
+		uni.showToast({ title: '请先打开相机', icon: 'none' });
+		return;
+	}
+	enableTapToFocus();
+	tapToFocusEnabled.value = true;
+	log('点击对焦已开启，点击相机画面可对焦', 'success');
+	uni.showToast({ title: '点击对焦已开启', icon: 'success' });
+};
+
+/**
+ * 关闭点击对焦
+ */
+const onDisableTapToFocus = () => {
+	if (!cameraVisible.value) {
+		log('相机未开启', 'warn');
+		return;
+	}
+	disableTapToFocus();
+	tapToFocusEnabled.value = false;
+	log('点击对焦已关闭', 'info');
+	uni.showToast({ title: '点击对焦已关闭', icon: 'none' });
+};
+
+/**
+ * switch 开关统一处理
+ */
+const onToggleTapToFocus = (enabled) => {
+	if (enabled) {
+		onEnableTapToFocus();
+	} else {
+		onDisableTapToFocus();
+	}
+};
+
+/**
+ * 打开相机并自动开启点击对焦
+ * 测试最常见的使用场景：showCamera success 回调中调用 enableTapToFocus
+ */
+const onOpenCameraWithTapToFocus = async () => {
+	if (cameraVisible.value) {
+		onCloseCamera();
+		await new Promise((r) => setTimeout(r, 300));
+	}
+	log('=== 场景：打开相机并开启点击对焦 ===', 'info');
+	try {
+		const { windowWidth, windowHeight } = await uni.getSystemInfo();
+		showCamera({
+			width: windowWidth,
+			height: Math.floor(windowHeight * 0.6),
+			top: 0,
+			left: 0,
+			cameraFacing: 'back',
+			views: [
+				{
+					type: 'text',
+					text: '👆 点击画面进行对焦',
+					watermark: false,
+					style: {
+						top: 16,
+						fontColor: '#FFFFFF',
+						fontWeight: 'bold',
+						textAlign: 'center',
+						fontSize: 16
+					}
+				}
+			],
+			success: () => {
+				cameraVisible.value = true;
+				cameraFacing.value = 'back';
+				// 相机打开后立即开启点击对焦
+				enableTapToFocus();
+				tapToFocusEnabled.value = true;
+				log('相机已打开，点击对焦已自动开启', 'success');
+				uni.showToast({ title: '点击画面即可对焦', icon: 'none' });
+			},
+			fail: (e) => {
+				log('相机打开失败：' + e, 'error');
+			}
+		});
+	} catch (e) {
+		log('打开相机异常：' + e, 'error');
+	}
+};
+
 // ===== 生命周期 =====
 
 /**
@@ -1724,6 +1858,12 @@ onUnmounted(() => {
 		min-width: 110rpx;
 	}
 
+	.input-hint {
+		font-size: 20rpx;
+		color: #6e7681;
+		margin-left: 8rpx;
+	}
+
 	.input-field {
 		flex: 1;
 		height: 64rpx;
@@ -1812,6 +1952,20 @@ onUnmounted(() => {
 		font-size: 22rpx;
 		color: #8b949e;
 		line-height: 1.6;
+	}
+}
+
+.tap-focus-tip {
+	margin-top: 16rpx;
+	padding: 16rpx 20rpx;
+	background: rgba(56, 139, 253, 0.1);
+	border: 1px solid rgba(56, 139, 253, 0.3);
+	border-radius: 10rpx;
+
+	.tip-text {
+		font-size: 24rpx;
+		color: #58a6ff;
+		text-align: center;
 	}
 }
 

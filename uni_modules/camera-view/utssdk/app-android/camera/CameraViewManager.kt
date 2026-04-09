@@ -13,6 +13,7 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -41,6 +42,11 @@ object CameraViewManager {
     // 扫描条相关
     private var scanBarView: ImageView? = null
     private var scanBarAnimator: AnimatorSet? = null
+
+    // 点击对焦相关
+    private var tapToFocusEnabled: Boolean = false
+    private var focusRingView: View? = null
+    private var focusRingAnimator: AnimatorSet? = null
 
     /**
      * 获取线程池，不存在则创建
@@ -242,6 +248,12 @@ object CameraViewManager {
                     scanBarAnimator = null
                     barView?.clearAnimation()
                     scanBarView = null
+
+                    // 停止对焦框动画
+                    focusRingAnimator?.cancel()
+                    focusRingAnimator = null
+                    focusRingView = null
+                    tapToFocusEnabled = false
 
                     containerToRemove?.let { container ->
                         (container.parent as? ViewGroup)?.removeView(container)
@@ -601,6 +613,104 @@ object CameraViewManager {
     fun isCameraShowing(): Boolean = isCameraShowing
 
     fun getCameraContainer(): FrameLayout? = cameraContainer
+
+    // ============ 点击对焦 ============
+
+    /**
+     * 开启点击对焦功能
+     * 在 cameraContainer 上注册触摸监听，触摸时调用 CameraController.focusAt 并显示对焦框
+     */
+    fun enableTapToFocus(activity: Activity) {
+        val container = cameraContainer ?: return
+        tapToFocusEnabled = true
+        container.setOnTouchListener { _, event ->
+            if (!tapToFocusEnabled) return@setOnTouchListener false
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                val x = event.x
+                val y = event.y
+                val w = container.width
+                val h = container.height
+                if (w > 0 && h > 0) {
+                    CameraController.focusAt(x, y, w, h)
+                    showFocusRing(activity, x, y)
+                }
+            }
+            true
+        }
+    }
+
+    /**
+     * 关闭点击对焦功能
+     */
+    fun disableTapToFocus() {
+        tapToFocusEnabled = false
+        cameraContainer?.setOnTouchListener(null)
+        removeFocusRing()
+    }
+
+    /**
+     * 在指定位置显示对焦框（白色圆角矩形）并播放缩小+渐隐动画
+     */
+    private fun showFocusRing(activity: Activity, centerX: Float, centerY: Float) {
+        val container = cameraContainer ?: return
+
+        // 移除旧对焦框
+        removeFocusRing()
+
+        val ringSize = dipToPx(activity, 72)  // 72dp 对焦框
+
+        val ring = View(activity).apply {
+            background = createFocusRingDrawable()
+            alpha = 0f
+        }
+
+        val params = FrameLayout.LayoutParams(ringSize, ringSize).apply {
+            leftMargin = (centerX - ringSize / 2).toInt().coerceIn(0, container.width - ringSize)
+            topMargin  = (centerY - ringSize / 2).toInt().coerceIn(0, container.height - ringSize)
+        }
+        container.addView(ring, params)
+        focusRingView = ring
+
+        // 动画：先淡入+缩小（从 1.3x 到 1.0x），保持 600ms，再淡出
+        val scaleX0 = ObjectAnimator.ofFloat(ring, "scaleX", 1.3f, 1.0f).apply { duration = 200 }
+        val scaleY0 = ObjectAnimator.ofFloat(ring, "scaleY", 1.3f, 1.0f).apply { duration = 200 }
+        val alphaIn = ObjectAnimator.ofFloat(ring, "alpha", 0f, 1f).apply { duration = 150 }
+
+        val hold  = ObjectAnimator.ofFloat(ring, "alpha", 1f, 1f).apply { duration = 600; startDelay = 200 }
+        val alphaOut = ObjectAnimator.ofFloat(ring, "alpha", 1f, 0f).apply { duration = 300; startDelay = 800 }
+
+        val set = AnimatorSet().apply {
+            playTogether(scaleX0, scaleY0, alphaIn, hold, alphaOut)
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    removeFocusRing()
+                }
+            })
+        }
+        focusRingAnimator = set
+        set.start()
+    }
+
+    private fun removeFocusRing() {
+        focusRingAnimator?.cancel()
+        focusRingAnimator = null
+        focusRingView?.let { v ->
+            (v.parent as? ViewGroup)?.removeView(v)
+        }
+        focusRingView = null
+    }
+
+    /**
+     * 创建对焦框的 Drawable（白色圆角矩形边框）
+     */
+    private fun createFocusRingDrawable(): android.graphics.drawable.Drawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 8f * 3  // 约 8dp，转换为 px 时 density≈3
+            setColor(Color.TRANSPARENT)
+            setStroke(4, Color.WHITE)  // 4px 白色边框
+        }
+    }
 
     // ============ 扫描条相关 ============
 

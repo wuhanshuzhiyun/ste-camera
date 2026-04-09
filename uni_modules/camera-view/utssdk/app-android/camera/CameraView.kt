@@ -172,6 +172,33 @@ object CameraView {
         }
     }
 
+    /**
+     * 开启点击对焦功能
+     * 用户点击相机画面后，相机将对焦到点击位置，并显示对焦框
+     */
+    fun enableTapToFocus() {
+        if (!CameraViewManager.isCameraShowing()) {
+            console.log("相机未显示，无法开启点击对焦")
+            return
+        }
+        withActivity { activity ->
+            activity.runOnUiThread {
+                CameraViewManager.enableTapToFocus(activity)
+            }
+        }
+    }
+
+    /**
+     * 关闭点击对焦功能
+     */
+    fun disableTapToFocus() {
+        withActivity { activity ->
+            activity.runOnUiThread {
+                CameraViewManager.disableTapToFocus()
+            }
+        }
+    }
+
     fun switchCamera() {
         if (!CameraViewManager.isCameraShowing()) {
             console.log("相机未显示，无法切换摄像头")

@@ -3,6 +3,7 @@ package uts.ste.camera
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.hardware.Camera
 import android.os.Handler
 import android.os.Looper
@@ -221,6 +222,64 @@ object CameraController {
         }
 
         return optimalSize
+    }
+
+    /**
+     * 点击对焦
+     * 将屏幕坐标转换为相机的 (-1000, -1000) ~ (1000, 1000) 坐标系后设置对焦区域
+     *
+     * @param touchX        触摸点 X（相对于相机容器，px）
+     * @param touchY        触摸点 Y（相对于相机容器，px）
+     * @param containerW    相机容器宽度（px）
+     * @param containerH    相机容器高度（px）
+     */
+    fun focusAt(touchX: Float, touchY: Float, containerW: Int, containerH: Int) {
+        val currentCamera = camera ?: return
+        try {
+            val params = currentCamera.parameters
+
+            // 检查是否支持对焦区域
+            if (params.maxNumFocusAreas <= 0) {
+                // 不支持区域对焦，降级为自动对焦
+                if (params.supportedFocusModes?.contains(Camera.Parameters.FOCUS_MODE_AUTO) == true) {
+                    params.focusMode = Camera.Parameters.FOCUS_MODE_AUTO
+                    currentCamera.parameters = params
+                    currentCamera.autoFocus(null)
+                }
+                return
+            }
+
+            // 将容器坐标映射到相机坐标系 (-1000 ~ 1000)
+            val focusX = ((touchX / containerW) * 2000 - 1000).toInt().coerceIn(-1000, 1000)
+            val focusY = ((touchY / containerH) * 2000 - 1000).toInt().coerceIn(-1000, 1000)
+
+            // 对焦框大小（相机坐标系中的半径）
+            val halfSize = 100
+            val focusRect = Rect(
+                (focusX - halfSize).coerceAtLeast(-1000),
+                (focusY - halfSize).coerceAtLeast(-1000),
+                (focusX + halfSize).coerceAtMost(1000),
+                (focusY + halfSize).coerceAtMost(1000)
+            )
+
+            val focusArea = Camera.Area(focusRect, 1000)
+
+            params.focusAreas = listOf(focusArea)
+
+            // 同步设置测光区域（如果支持）
+            if (params.maxNumMeteringAreas > 0) {
+                params.meteringAreas = listOf(focusArea)
+            }
+
+            if (params.supportedFocusModes?.contains(Camera.Parameters.FOCUS_MODE_AUTO) == true) {
+                params.focusMode = Camera.Parameters.FOCUS_MODE_AUTO
+            }
+
+            currentCamera.parameters = params
+            currentCamera.autoFocus(null)
+        } catch (e: Exception) {
+            console.log("点击对焦失败：${e.message}")
+        }
     }
 
     fun releaseCamera() {
