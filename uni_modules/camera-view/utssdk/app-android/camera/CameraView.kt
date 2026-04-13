@@ -1,6 +1,7 @@
 package uts.ste.camera
 
 import android.app.Activity
+import android.view.ViewTreeObserver
 import io.dcloud.uts.UTSAndroid
 import io.dcloud.uts.console
 
@@ -138,8 +139,14 @@ object CameraView {
             return
         }
         try {
-            CameraController.releaseCamera()
-            withActivity { activity -> CameraViewManager.closeCameraView(activity) }
+            // releaseCamera 和 closeCameraView 均需在主线程执行，
+            // 避免与 surfaceDestroyed 回调（主线程）并发操作同一 camera 实例导致崩溃
+            withActivity { activity ->
+                activity.runOnUiThread {
+                    CameraController.releaseCamera()
+                    CameraViewManager.closeCameraView(activity)
+                }
+            }
         } catch (e: Exception) {
             console.log("关闭相机失败：${e.message}")
         }
@@ -218,14 +225,19 @@ object CameraView {
         }
     }
 
+    // 记录 onPause 前的扫码模式状态，onResume 时自动恢复
+    private var wasScanModeActive = false
+
     /**
      * 生命周期回调：onPause
      * 暂停时停止预览和扫码
      */
     fun onPause() {
         try {
+            // 记录扫码模式状态，以便 onResume 时恢复
+            wasScanModeActive = CameraController.isScanModeActive()
             // 停止扫码模式
-            if (CameraController.isScanModeActive()) {
+            if (wasScanModeActive) {
                 CameraController.stopScanMode()
             }
             // 停止预览
@@ -238,7 +250,7 @@ object CameraView {
 
     /**
      * 生命周期回调：onResume
-     * 恢复时重新启动预览
+     * 恢复时重新启动预览，并恢复暂停前的扫码模式
      */
     fun onResume() {
         if (!CameraViewManager.isCameraShowing()) {
@@ -248,21 +260,62 @@ object CameraView {
         withActivity { activity ->
             activity.runOnUiThread {
                 try {
-                    val container = CameraViewManager.getCameraContainer()
-                    if (container != null && container.width > 0 && container.height > 0) {
-                        val facing = CameraController.getCurrentCameraFacing()
-                        CameraController.startCameraPreview(
-                            activity,
-                            container.width,
-                            container.height,
-                            facing
+                    val container = CameraViewManager.getCameraContainer() ?: return@runOnUiThread
+                    // 提前捕获扫码状态，避免 lambda 闭包里读到被修改后的值
+                    val pendingScan = wasScanModeActive
+                    wasScanModeActive = false
+
+                    if (container.width > 0 && container.height > 0) {
+                        // 容器已完成 layout，直接恢复
+                        resumeCameraPreview(activity, container.width, container.height, pendingScan)
+                    } else {
+                        // 低端机 onResume 可能早于 layout pass，等待 layout 完成后再恢复
+                        // 不处理此分支则相机永不恢复
+                        container.viewTreeObserver.addOnGlobalLayoutListener(
+                            object : ViewTreeObserver.OnGlobalLayoutListener {
+                                override fun onGlobalLayout() {
+                                    container.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                                    // 必须回到主线程，因为 onGlobalLayout 本身就在主线程，但防御性加一层
+                                    activity.runOnUiThread {
+                                        if (container.width > 0 && container.height > 0) {
+                                            resumeCameraPreview(activity, container.width, container.height, pendingScan)
+                                        }
+                                    }
+                                }
+                            }
                         )
-                        console.log("相机已恢复")
                     }
                 } catch (e: Exception) {
                     console.log("恢复相机失败：${e.message}")
                 }
             }
+        }
+    }
+
+    /**
+     * 真正执行相机恢复逻辑（容器尺寸已确认 > 0）
+     */
+    private fun resumeCameraPreview(activity: Activity, containerW: Int, containerH: Int, pendingScan: Boolean) {
+        try {
+            val facing = CameraController.getCurrentCameraFacing()
+            CameraController.startCameraPreview(
+                activity,
+                containerW,
+                containerH,
+                facing,
+                // 相机 open 成功后再恢复扫码，避免 camera==null 时调用 startScanMode 失败
+                object : CameraOpenCallback {
+                    override fun onSuccess(cameraFacing: Int) {
+                        if (pendingScan) CameraController.startScanMode()
+                    }
+                    override fun onFail(errCode: Int, errMsg: String) {
+                        console.log("onResume 相机恢复失败($errCode)：$errMsg")
+                    }
+                }
+            )
+            console.log("相机已恢复")
+        } catch (e: Exception) {
+            console.log("恢复相机失败：${e.message}")
         }
     }
 

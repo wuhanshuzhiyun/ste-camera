@@ -23,8 +23,10 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import io.dcloud.uts.console
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+
 
 /**
  * 相机视图管理器
@@ -33,8 +35,9 @@ import java.util.concurrent.TimeUnit
 object CameraViewManager {
     private var cameraContainer: FrameLayout? = null
     private var isCameraShowing: Boolean = false
-    private val watermarkConfigs: MutableList<Map<String, Any?>> = mutableListOf()
-    private val preloadedBitmaps: MutableMap<String, Bitmap> = mutableMapOf()
+    @Volatile private var isShowingInProgress: Boolean = false
+    private val watermarkConfigs: MutableList<Map<String, Any?>> = Collections.synchronizedList(mutableListOf())
+    private val preloadedBitmaps: MutableMap<String, Bitmap> = ConcurrentHashMap()
     @Volatile
     private var preloadExecutor: java.util.concurrent.ExecutorService? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -74,39 +77,46 @@ object CameraViewManager {
         views: List<Map<String, Any?>>? = null,
         scanBar: Map<String, Any?>? = null
     ) {
-        if (isCameraShowing) {
+        // 双重保护：isCameraShowing 防止已显示时重入，isShowingInProgress 防止 runOnUiThread 入队前的快速重入
+        if (isCameraShowing || isShowingInProgress) {
             return
         }
+        isShowingInProgress = true
 
         // 确保线程池可用（如果已被关闭则重新创建）
         if (preloadExecutor == null || preloadExecutor!!.isShutdown || preloadExecutor!!.isTerminated) {
             preloadExecutor = Executors.newSingleThreadExecutor()
         }
 
-        val displayMetrics = activity.resources.displayMetrics
-        val screenWidth = displayMetrics.widthPixels
-        val screenHeight = displayMetrics.heightPixels
+        try {
+            val displayMetrics = activity.resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
 
-        val finalWidth = width?.let { dipToPx(activity, it) } ?: screenWidth
-        val finalHeight = height?.let { dipToPx(activity, it) } ?: screenHeight
-        val finalTop = top?.let { dipToPx(activity, it) } ?: 0
-        val finalLeft = left?.let { dipToPx(activity, it) } ?: 0
+            val finalWidth = width?.let { dipToPx(activity, it) } ?: screenWidth
+            val finalHeight = height?.let { dipToPx(activity, it) } ?: screenHeight
+            val finalTop = top?.let { dipToPx(activity, it) } ?: 0
+            val finalLeft = left?.let { dipToPx(activity, it) } ?: 0
 
-        cameraContainer = createCameraContainer(activity, finalWidth, finalHeight, finalTop, finalLeft)
+            cameraContainer = createCameraContainer(activity, finalWidth, finalHeight, finalTop, finalLeft)
 
-        val surfaceView = createSurfaceView(activity)
-        CameraController.setSurfaceView(surfaceView)
-        cameraContainer!!.addView(surfaceView)
+            val surfaceView = createSurfaceView(activity)
+            CameraController.setSurfaceView(surfaceView)
+            cameraContainer!!.addView(surfaceView)
 
-        views?.forEach { viewConfig -> addCustomView(activity, viewConfig) }
+            views?.forEach { viewConfig -> addCustomView(activity, viewConfig) }
 
-        // 初始化扫描条
-        if (scanBar != null) {
-            setupScanBar(activity, scanBar, finalWidth, finalHeight)
+            // 初始化扫描条
+            if (scanBar != null) {
+                setupScanBar(activity, scanBar, finalWidth, finalHeight)
+            }
+
+            activity.addContentView(cameraContainer!!, cameraContainer!!.layoutParams as FrameLayout.LayoutParams)
+            isCameraShowing = true
+        } finally {
+            // 无论是否抛异常，必须清除进行标记，避免后续 showCamera 被永久拒绝
+            isShowingInProgress = false
         }
-
-        activity.addContentView(cameraContainer!!, cameraContainer!!.layoutParams as FrameLayout.LayoutParams)
-        isCameraShowing = true
     }
 
     private fun createCameraContainer(activity: Activity, width: Int, height: Int, topMargin: Int, leftMargin: Int): FrameLayout {
@@ -227,6 +237,10 @@ object CameraViewManager {
         }
         watermarkConfigs.clear()
         preloadedBitmaps.clear()
+        // 对焦框可能在 clearViews 时被删除，但字段和动画未清理，需一并清理防止内存泄漏
+        focusRingAnimator?.cancel()
+        focusRingAnimator = null
+        focusRingView = null
     }
 
     fun closeCameraView(activity: Activity) {
@@ -236,11 +250,12 @@ object CameraViewManager {
         }
         // 立即置为 false，防止并发重入
         isCameraShowing = false
+        isShowingInProgress = false
         try {
             val containerToRemove = cameraContainer
             val barView = scanBarView
 
-            // 动画操作 & View 移除必须在主线程
+            // 所有 View 操作、动画、Bitmap 回收必须在主线程统一执行，避免竞态
             activity.runOnUiThread {
                 try {
                     // 先停动画（Animator.cancel 要求主线程）
@@ -258,34 +273,27 @@ object CameraViewManager {
                     containerToRemove?.let { container ->
                         (container.parent as? ViewGroup)?.removeView(container)
                     }
+
+                    // Bitmap 回收放在主线程，与 ImageLoadRunnable 回调保持同线程，消除竞态
+                    preloadedBitmaps.values.forEach { bitmap ->
+                        if (!bitmap.isRecycled) bitmap.recycle()
+                    }
+                    watermarkConfigs.clear()
+                    preloadedBitmaps.clear()
+                    // cameraContainer 置空必须与 Bitmap 清理同线程，防止子线程写入脏数据后泄漏
+                    cameraContainer = null
                 } catch (e: Exception) {
                     console.log("移除相机容器失败：${e.message}")
                 }
             }
 
-            // 回收 Bitmap 内存
-            preloadedBitmaps.values.forEach { bitmap ->
-                if (!bitmap.isRecycled) {
-                    bitmap.recycle()
-                }
-            }
-
-            cameraContainer = null
-            watermarkConfigs.clear()
-            preloadedBitmaps.clear()
-
-            // 关闭线程池
+            // 关闭线程池：直接 shutdown + shutdownNow，不阻塞等待，避免在主线程调用时触发 ANR
             try {
-                preloadExecutor?.let { executor ->
-                    executor.shutdown()
-                    if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        executor.shutdownNow()
-                    }
-                }
-                preloadExecutor = null
+                preloadExecutor?.shutdown()
+                preloadExecutor?.shutdownNow()
             } catch (e: Exception) {
                 console.log("关闭线程池失败：${e.message}")
-                preloadExecutor?.shutdownNow()
+            } finally {
                 preloadExecutor = null
             }
         } catch (e: Exception) {
@@ -340,21 +348,27 @@ object CameraViewManager {
                         connection.disconnect()
                     }
                 } else {
-                    // 本地文件路径
-                    val file = java.io.File(imageUrl)
+                    // 本地文件路径（去掉可能携带的 file:// 前缀）
+                    val filePath = if (imageUrl.startsWith("file://")) imageUrl.removePrefix("file://") else imageUrl
+                    val file = java.io.File(filePath)
                     if (file.exists()) {
-                        BitmapFactory.decodeFile(imageUrl)
+                        BitmapFactory.decodeFile(filePath)
                     } else {
                         console.log("水印图片文件不存在：$imageUrl")
                         null
                     }
                 }
                 if (bitmap != null) {
-                    preloadedBitmaps[imageUrl] = bitmap
+                    // 相机可能已在子线程下载期间被关闭，若已关闭则直接回收，不写入 map
+                    if (isCameraShowing) {
+                        preloadedBitmaps[imageUrl] = bitmap
+                    } else {
+                        bitmap.recycle()
+                    }
                 } else {
                     console.log("水印图片预加载失败：$imageUrl")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 console.log("水印图片预加载异常：${e.message}，url=$imageUrl")
             }
         }
@@ -412,7 +426,7 @@ object CameraViewManager {
                     // top 控制距容器右侧的距离
                     this.rightMargin = topMarginPx
                     when (textAlign) {
-                        "center" -> { gravity = Gravity.CENTER_VERTICAL or Gravity.END; this.leftMargin = offsetPx }
+                        "center" -> { gravity = Gravity.CENTER_VERTICAL or Gravity.END; this.rightMargin = offsetPx }
                         "right"  -> { gravity = Gravity.BOTTOM or Gravity.END; this.bottomMargin = offsetPx }
                         else     -> { gravity = Gravity.TOP or Gravity.END; this.topMargin = offsetPx }
                     }
@@ -594,15 +608,23 @@ object CameraViewManager {
                         connection.disconnect()
                     }
                 } else {
-                    BitmapFactory.decodeFile(imageUrl)
+                    // decodeFile 只接受纯路径，去掉可能携带的 file:// 前缀
+                    val filePath = if (imageUrl.startsWith("file://")) imageUrl.removePrefix("file://") else imageUrl
+                    BitmapFactory.decodeFile(filePath)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 console.log("加载图片失败：${e.message}")
                 null
             }
 
-            // 在主线程回调
-            mainHandler.post { onComplete(bitmap) }
+            // 在主线程回调；若相机已关闭则回收 Bitmap，避免内存泄漏
+            mainHandler.post {
+                if (!isCameraShowing) {
+                    bitmap?.recycle()
+                    return@post
+                }
+                onComplete(bitmap)
+            }
         }
     }
 
@@ -660,13 +682,13 @@ object CameraViewManager {
         val ringSize = dipToPx(activity, 72)  // 72dp 对焦框
 
         val ring = View(activity).apply {
-            background = createFocusRingDrawable()
+            background = createFocusRingDrawable(activity)
             alpha = 0f
         }
 
         val params = FrameLayout.LayoutParams(ringSize, ringSize).apply {
-            leftMargin = (centerX - ringSize / 2).toInt().coerceIn(0, container.width - ringSize)
-            topMargin  = (centerY - ringSize / 2).toInt().coerceIn(0, container.height - ringSize)
+            leftMargin = (centerX - ringSize / 2).toInt().coerceIn(0, maxOf(0, container.width - ringSize))
+            topMargin  = (centerY - ringSize / 2).toInt().coerceIn(0, maxOf(0, container.height - ringSize))
         }
         container.addView(ring, params)
         focusRingView = ring
@@ -703,12 +725,13 @@ object CameraViewManager {
     /**
      * 创建对焦框的 Drawable（白色圆角矩形边框）
      */
-    private fun createFocusRingDrawable(): android.graphics.drawable.Drawable {
+    private fun createFocusRingDrawable(activity: Activity): android.graphics.drawable.Drawable {
+        val density = activity.resources.displayMetrics.density
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = 8f * 3  // 约 8dp，转换为 px 时 density≈3
+            cornerRadius = 8f * density   // 8dp 转 px，适配任意屏幕密度
             setColor(Color.TRANSPARENT)
-            setStroke(4, Color.WHITE)  // 4px 白色边框
+            setStroke((1.5f * density + 0.5f).toInt(), Color.WHITE)  // 约 1.5dp 白色边框
         }
     }
 
@@ -883,7 +906,10 @@ object CameraViewManager {
         // 先隐藏旧的（如果存在）
         hideScanBar()
         val container = cameraContainer ?: return
-        setupScanBar(activity, scanBar, container.width, container.height)
+        // 容器可能还未完成 layout（width/height == 0），兜底用屏幕尺寸，避免扫描条宽度错误
+        val containerW = if (container.width > 0) container.width else activity.resources.displayMetrics.widthPixels
+        val containerH = if (container.height > 0) container.height else activity.resources.displayMetrics.heightPixels
+        setupScanBar(activity, scanBar, containerW, containerH)
     }
 
     /**
@@ -921,11 +947,12 @@ object CameraViewManager {
                     connection.disconnect()
                 }
             } else {
-                val file = java.io.File(imageUrl)
-                if (file.exists()) BitmapFactory.decodeFile(imageUrl)
+                val filePath = if (imageUrl.startsWith("file://")) imageUrl.removePrefix("file://") else imageUrl
+                val file = java.io.File(filePath)
+                if (file.exists()) BitmapFactory.decodeFile(filePath)
                 else { console.log("扫描条图片文件不存在：$imageUrl"); null }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             console.log("扫描条图片加载异常：${e.message}")
             null
         }

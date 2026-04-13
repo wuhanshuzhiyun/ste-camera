@@ -5,8 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.hardware.Camera
-import android.os.Handler
-import android.os.Looper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
@@ -107,7 +105,13 @@ object CameraController {
     private fun configureCamera(camera: Camera, activity: Activity) {
         val parameters = camera.parameters
         val supportedPreviewSizes = parameters.supportedPreviewSizes
-        val optimalSize = getOptimalPreviewSize(supportedPreviewSizes, 1920, 1080)
+        // containerWidth/Height 可能在 surfaceCreated 路径下还未赋值（为 0），兜底到 1920×1080
+        val rawW = if (this.containerWidth > 0) this.containerWidth else 1920
+        val rawH = if (this.containerHeight > 0) this.containerHeight else 1080
+        // 相机传感器预览尺寸总是横向列出（宽 > 高），竖屏时需取 longSide/shortSide 再匹配，避免预览质量退化
+        val longSide = maxOf(rawW, rawH)
+        val shortSide = minOf(rawW, rawH)
+        val optimalSize = getOptimalPreviewSize(supportedPreviewSizes, longSide, shortSide)
 
         if (optimalSize != null) {
             parameters.setPreviewSize(optimalSize.width, optimalSize.height)
@@ -130,6 +134,7 @@ object CameraController {
     }
 
     private fun adjustSurfaceViewSize(containerWidth: Int, containerHeight: Int) {
+        if (containerWidth <= 0 || containerHeight <= 0) return
         val currentCamera = camera ?: return
         val params = currentCamera.parameters
         val previewSize = params.previewSize ?: run {
@@ -215,10 +220,19 @@ object CameraController {
             }
         }
 
-        // 如果没有找到满足条件的尺寸，选择最小的尺寸（避免选择过大的尺寸）
+        // 如果没有找到满足最小尺寸要求的尺寸，选比例最接近且像素最大的（避免低端机退化到最小分辨率）
         if (optimalSize == null) {
-            console.log("未找到满足最小尺寸要求的预览尺寸，使用最小尺寸")
-            optimalSize = sizes.minByOrNull { it.width * it.height }
+            console.log("未找到满足最小尺寸要求的预览尺寸，选比例最近的最大尺寸兜底")
+            optimalSize = sizes.maxWithOrNull { a, b ->
+                val ratioDiffA = Math.abs(a.width.toDouble() / a.height - targetRatio)
+                val ratioDiffB = Math.abs(b.width.toDouble() / b.height - targetRatio)
+                // 优先比例差小的；比例差相同时选像素多的
+                when {
+                    ratioDiffA < ratioDiffB -> 1
+                    ratioDiffA > ratioDiffB -> -1
+                    else -> (a.width * a.height).compareTo(b.width * b.height)
+                }
+            }
         }
 
         return optimalSize
@@ -235,6 +249,7 @@ object CameraController {
      */
     fun focusAt(touchX: Float, touchY: Float, containerW: Int, containerH: Int) {
         val currentCamera = camera ?: return
+        if (containerW <= 0 || containerH <= 0) return
         try {
             val params = currentCamera.parameters
 
@@ -282,13 +297,27 @@ object CameraController {
         }
     }
 
+    @Synchronized
     fun releaseCamera() {
         camera?.apply {
-            stopPreview()
+            // stopPreview 在拍照进行中调用会抛 RuntimeException，必须 try-catch
+            try { stopPreview() } catch (e: Exception) { console.log("stopPreview 失败：${e.message}") }
             setPreviewCallback(null)
             release()
         }
         camera = null
+        // 清零帧数据，防止切换摄像头窗口期用旧帧+新尺寸参数构造 YuvImage
+        if (isScanModeRunning.get()) {
+            frameLock.lock()
+            try {
+                latestFrameData = null
+                latestFrameWidth = 0
+                latestFrameHeight = 0
+                latestFrameOrientation = 0
+            } finally {
+                frameLock.unlock()
+            }
+        }
     }
 
     fun takePicture(callback: TakePictureCallback) {
@@ -316,11 +345,9 @@ object CameraController {
     }
 
     private fun processCapturedImage(camera: Camera, imageData: ByteArray, callback: (String?) -> Unit) {
-        var originalBitmap: Bitmap? = null
         try {
             val activity = UTSAndroid.getUniActivity()
             var bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
-            originalBitmap = bitmap // 保存原始引用用于后续回收
 
             if (activity != null) {
                 val isFrontCamera = currentCameraId == 1
@@ -388,7 +415,11 @@ object CameraController {
 
                 val watermarks = CameraViewManager.getWatermarkConfigs()
                 if (watermarks.isNotEmpty()) {
-                    val watermarkedBitmap = ImageProcessor.drawWatermarks(activity, bitmap, watermarks)
+                    // 将容器宽度从 px 转换为 dp 传入，确保水印位置在非全屏容器下也正确
+                    val containerWidthDp = if (containerWidth > 0) {
+                        (containerWidth / activity.resources.displayMetrics.density).toInt()
+                    } else 0
+                    val watermarkedBitmap = ImageProcessor.drawWatermarks(activity, bitmap, watermarks, containerWidthDp)
                     // drawWatermarks 创建了新 Bitmap，回收旧的
                     if (watermarkedBitmap != bitmap && !bitmap.isRecycled) {
                         bitmap.recycle()
@@ -404,10 +435,12 @@ object CameraController {
             }
             camera.startPreview()
             callback(imagePath)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             console.log("处理拍照图片失败：${e.message}")
             callback(null)
-            camera.startPreview()
+            try { camera.startPreview() } catch (e2: Throwable) {
+                console.log("拍照失败后恢复预览失败：${e2.message}")
+            }
         }
     }
 
@@ -469,10 +502,12 @@ object CameraController {
                 cam.startPreview()
                 // 如果扫码模式正在运行，需要重新设置预览回调
                 if (isScanModeRunning.get()) {
-                    // 切换摄像头后刷新缓存的预览尺寸
+                    // 切换摄像头后刷新缓存的预览尺寸和帧方向
                     val previewSize = cam.parameters.previewSize
                     cachedPreviewWidth = previewSize?.width ?: 0
                     cachedPreviewHeight = previewSize?.height ?: 0
+                    val act = UTSAndroid.getUniActivity()
+                    cachedFrameOrientation = if (act != null) getCameraDisplayOrientation(act) else 0
                     setupPreviewCallback()
                 }
             }
@@ -493,11 +528,26 @@ object CameraController {
                         val previewSize = cam.parameters.previewSize
                         cachedPreviewWidth = previewSize?.width ?: 0
                         cachedPreviewHeight = previewSize?.height ?: 0
+                        val act = UTSAndroid.getUniActivity()
+                        cachedFrameOrientation = if (act != null) getCameraDisplayOrientation(act) else 0
                         setupPreviewCallback()
                     }
                 }
             } catch (e2: Exception) {
                 console.log("恢复原摄像头也失败：${e2.message}")
+                // 两次都失败：相机为 null，扫码模式状态必须重置，否则 isScanModeRunning==true
+                // 但 camera==null，会导致 getScanFrame 绕过检查返回空帧，扫码静默失效
+                if (isScanModeRunning.get()) {
+                    isScanModeRunning.set(false)
+                    frameLock.lock()
+                    try {
+                        latestFrameData = null
+                        latestFrameWidth = 0
+                        latestFrameHeight = 0
+                    } finally {
+                        frameLock.unlock()
+                    }
+                }
             }
         }
     }
@@ -517,13 +567,14 @@ object CameraController {
     private var latestFrameHeight: Int = 0
     @Volatile
     private var latestFrameOrientation: Int = 0
-    // 缓存的预览尺寸，避免在 onPreviewFrame 里每帧调用 camera.parameters（BUG3 修复）
+    // 缓存的预览尺寸，避免在 onPreviewFrame 里每帧调用 camera.parameters
     @Volatile
     private var cachedPreviewWidth: Int = 0
     @Volatile
     private var cachedPreviewHeight: Int = 0
-    // 主线程Handler，用于在主线程处理图片
-    private val mainHandler = Handler(Looper.getMainLooper())
+    // 缓存的帧方向，在 startScanMode / switchCamera 时更新，避免每帧触发 JNI + Binder IPC
+    @Volatile
+    private var cachedFrameOrientation: Int = 0
 
     /**
      * 启动扫码模式
@@ -546,6 +597,9 @@ object CameraController {
             val previewSize = currentCamera.parameters.previewSize
             cachedPreviewWidth = previewSize?.width ?: 0
             cachedPreviewHeight = previewSize?.height ?: 0
+            // 缓存一次帧方向（getCameraDisplayOrientation 含 JNI + Binder IPC，不应每帧调用）
+            val activity = UTSAndroid.getUniActivity()
+            cachedFrameOrientation = if (activity != null) getCameraDisplayOrientation(activity) else 0
 
             isScanModeRunning.set(true)
             setupPreviewCallback()
@@ -566,14 +620,13 @@ object CameraController {
             currentCamera.setPreviewCallback(object : Camera.PreviewCallback {
                 override fun onPreviewFrame(data: ByteArray?, camera: Camera) {
                     if (data == null || !isScanModeRunning.get()) return
-                    // 直接使用缓存的预览尺寸，避免每帧调用 camera.parameters（BUG3 修复）
+                    // 直接使用缓存的预览尺寸和帧方向，避免每帧调用 camera.parameters / JNI / Binder IPC
                     frameLock.lock()
                     try {
                         latestFrameData = data
                         latestFrameWidth = cachedPreviewWidth
                         latestFrameHeight = cachedPreviewHeight
-                        val activity = UTSAndroid.getUniActivity()
-                        latestFrameOrientation = if (activity != null) getCameraDisplayOrientation(activity) else 0
+                        latestFrameOrientation = cachedFrameOrientation
                     } finally {
                         frameLock.unlock()
                     }
@@ -603,6 +656,7 @@ object CameraController {
                 latestFrameData = null
                 latestFrameWidth = 0
                 latestFrameHeight = 0
+                latestFrameOrientation = 0
             } finally {
                 frameLock.unlock()
             }
@@ -634,7 +688,7 @@ object CameraController {
         val height: Int
         val orientation: Int
 
-        // 快速获取最新帧数据的引用
+        // 快速获取最新帧数据的快照（持锁时间最短）
         frameLock.lock()
         try {
             data = latestFrameData
@@ -649,70 +703,58 @@ object CameraController {
             return null
         }
 
-        // YUV → JPEG → Bitmap → Base64 转换逻辑（抽取为局部函数，主/非主线程均可调用）
-        fun convertFrame(): String? {
-            return try {
-                val yuvImage = android.graphics.YuvImage(
-                    data,
-                    android.graphics.ImageFormat.NV21,
-                    width,
-                    height,
-                    null
-                )
-                val outputStream = java.io.ByteArrayOutputStream()
-                val compressed = yuvImage.compressToJpeg(
-                    android.graphics.Rect(0, 0, width, height),
-                    quality.coerceIn(1, 100),
-                    outputStream
-                )
-                if (!compressed) return null
+        // 直接在调用线程同步执行转换，不依赖主线程
+        // 避免：1) 主线程被图片处理任务阻塞导致 UI 卡顿/ANR
+        //       2) CountDownLatch.await 超时导致低端机扫码帧丢失
+        return convertScanFrame(data, width, height, orientation, quality)
+    }
 
-                val jpegData = outputStream.toByteArray()
-                var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-
-                if (orientation != 0) {
-                    val rotated = ImageProcessor.rotateBitmap(bitmap, orientation.toFloat())
-                    if (rotated != bitmap && !bitmap.isRecycled) bitmap.recycle()
-                    bitmap = rotated
-                }
-                if (currentCameraId == 1) {
-                    val flipped = ImageProcessor.flipBitmapHorizontal(bitmap)
-                    if (flipped != bitmap && !bitmap.isRecycled) bitmap.recycle()
-                    bitmap = flipped
-                }
-
-                val finalStream = java.io.ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalStream)
-                val base64 = android.util.Base64.encodeToString(finalStream.toByteArray(), android.util.Base64.NO_WRAP)
-                bitmap.recycle()
-                base64
-            } catch (e: Exception) {
-                console.log("转换扫码帧失败：${e.message}")
+    private fun convertScanFrame(
+        data: ByteArray,
+        width: Int,
+        height: Int,
+        orientation: Int,
+        quality: Int
+    ): String? {
+        return try {
+            val yuvImage = android.graphics.YuvImage(
+                data,
+                android.graphics.ImageFormat.NV21,
+                width,
+                height,
                 null
+            )
+            val outputStream = java.io.ByteArrayOutputStream()
+            val compressed = yuvImage.compressToJpeg(
+                android.graphics.Rect(0, 0, width, height),
+                quality.coerceIn(1, 100),
+                outputStream
+            )
+            if (!compressed) return null
+
+            val jpegData = outputStream.toByteArray()
+            var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+
+            if (orientation != 0) {
+                val rotated = ImageProcessor.rotateBitmap(bitmap, orientation.toFloat())
+                if (rotated != bitmap && !bitmap.isRecycled) bitmap.recycle()
+                bitmap = rotated
             }
-        }
+            if (currentCameraId == 1) {
+                val flipped = ImageProcessor.flipBitmapHorizontal(bitmap)
+                if (flipped != bitmap && !bitmap.isRecycled) bitmap.recycle()
+                bitmap = flipped
+            }
 
-        // BUG1 修复：若已在主线程，直接同步执行，避免 mainHandler.post + CountDownLatch 死锁
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            return convertFrame()
+            val finalStream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, finalStream)
+            val base64 = android.util.Base64.encodeToString(finalStream.toByteArray(), android.util.Base64.NO_WRAP)
+            bitmap.recycle()
+            base64
+        } catch (e: Throwable) {
+            console.log("转换扫码帧失败：${e.message}")
+            null
         }
-
-        // 非主线程：post 到主线程执行后等待结果
-        var result: String? = null
-        val latch = java.util.concurrent.CountDownLatch(1)
-        mainHandler.post {
-            result = convertFrame()
-            latch.countDown()
-        }
-
-        // 等待转换完成（增加超时时间以适应低端设备）
-        try {
-            latch.await(300, java.util.concurrent.TimeUnit.MILLISECONDS)
-        } catch (e: InterruptedException) {
-            console.log("等待扫码帧转换超时")
-        }
-
-        return result
     }
 
     /**

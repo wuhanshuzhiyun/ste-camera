@@ -35,7 +35,7 @@ object ImageProcessor {
                 outputStream.flush()
             }
             file.absolutePath
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             console.log("保存图片失败：${e.message}")
             null
         }
@@ -47,7 +47,7 @@ object ImageProcessor {
             val matrix = android.graphics.Matrix()
             matrix.postRotate(degrees)
             Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             console.log("旋转图片失败：${e.message}")
             bitmap
         }
@@ -61,7 +61,7 @@ object ImageProcessor {
             val matrix = android.graphics.Matrix()
             matrix.preScale(-1f, 1f)
             Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             console.log("镜像翻转失败：${e.message}")
             bitmap
         }
@@ -69,18 +69,29 @@ object ImageProcessor {
 
     /**
      * 将水印配置叠加绘制到照片上
+     *
+     * @param context          Activity（获取 displayMetrics）
+     * @param bitmap           原始照片 Bitmap
+     * @param watermarks       水印配置列表
+     * @param containerWidthDp 相机容器宽度（dp）；为 0 时退回到屏幕宽度（向后兼容）
      */
-    fun drawWatermarks(context: Activity, bitmap: Bitmap, watermarks: List<Map<String, Any?>>): Bitmap {
+    fun drawWatermarks(context: Activity, bitmap: Bitmap, watermarks: List<Map<String, Any?>>,
+                       containerWidthDp: Int = 0): Bitmap {
         if (watermarks.isEmpty()) return bitmap
 
         val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutableBitmap)
 
         val density = context.resources.displayMetrics.density
-        val screenWidthPx = context.resources.displayMetrics.widthPixels.toFloat()
         val photoWidth = mutableBitmap.width.toFloat()
-        val photoHeight = mutableBitmap.height.toFloat()
-        val dpToPhoto = density * (photoWidth / screenWidthPx)
+
+        // dp → photo-px 比例：
+        //   正确公式：photoWidth / containerWidthDp（水印 dp 坐标直接对应容器 dp 宽度）
+        //   旧公式（全屏）：density * (photoWidth / screenWidthPx) ≈ photoWidth / (screenWidthPx/density)
+        //   两者在容器铺满屏幕时等价；容器非全屏时旧公式偏移，改为正确公式。
+        val containerDp = if (containerWidthDp > 0) containerWidthDp.toFloat()
+                          else (context.resources.displayMetrics.widthPixels / density)
+        val dpToPhoto = photoWidth / containerDp
 
         for (config in watermarks) {
             val type = config["type"] as? String ?: continue
@@ -152,7 +163,11 @@ object ImageProcessor {
         val watermarkBitmap: Bitmap? = CameraViewManager.getPreloadedBitmap(imageUrl)
             ?: run {
                 if (!imageUrl.startsWith("http")) {
-                    try { BitmapFactory.decodeFile(imageUrl) } catch (e: Exception) {
+                    try {
+                        // decodeFile 只接受纯路径，去掉可能携带的 file:// 前缀
+                        val path = if (imageUrl.startsWith("file://")) imageUrl.removePrefix("file://") else imageUrl
+                        BitmapFactory.decodeFile(path)
+                    } catch (e: Exception) {
                         console.log("本地水印图片加载失败：${e.message}"); null
                     }
                 } else {
