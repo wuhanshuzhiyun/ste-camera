@@ -1,0 +1,261 @@
+import { CameraOptions, View, ViewStyle, ScanBarOptions, CameraOpenSuccessResult, CameraOpenFailResult, ShowCamera, CloseCamera, TakePicture, EnableTapToFocus, DisableTapToFocus, UpdateViews, AddView, UpdateView, RemoveView, ClearViews, SwitchCamera, StartScanMode, StopScanMode, GetScanFrame, IsScanModeActive, ShowScanBar, HideScanBar } from "../interface"
+
+// ─────────────────────────────────────────────
+// 工具函数：ViewStyle → Dictionary<String, Any>
+// ─────────────────────────────────────────────
+
+function styleToDict(style: ViewStyle): Map<string, any> {
+	const result = new Map<string, any>()
+	const topVal = style.top
+	if (topVal != null) result.set("top", topVal)
+	const leftVal = style.left
+	if (leftVal != null) result.set("left", leftVal)
+	const fontSizeVal = style.fontSize
+	if (fontSizeVal != null) result.set("fontSize", fontSizeVal)
+	const fontColorVal = style.fontColor
+	if (fontColorVal != null) result.set("fontColor", fontColorVal)
+	const fontStyleVal = style.fontStyle
+	if (fontStyleVal != null) result.set("fontStyle", fontStyleVal)
+	const fontWeightVal = style.fontWeight
+	if (fontWeightVal != null) result.set("fontWeight", fontWeightVal)
+	const textAlignVal = style.textAlign
+	if (textAlignVal != null) result.set("textAlign", textAlignVal)
+	const textOffsetVal = style.textOffset
+	if (textOffsetVal != null) result.set("textOffset", textOffsetVal)
+	const widthVal = style.width
+	if (widthVal != null) result.set("width", widthVal)
+	const heightVal = style.height
+	if (heightVal != null) result.set("height", heightVal)
+	const rotationVal = style.rotation
+	if (rotationVal != null) {
+		const rotationMap: Map<string, number> = new Map([
+			["top", 0],
+			["right", 90],
+			["bottom", 180],
+			["left", 270]
+		])
+		const rotationNum = rotationMap.get(rotationVal)
+		if (rotationNum != null) {
+			result.set("rotation", rotationNum)
+		}
+	}
+	return result
+}
+
+function viewToDict(view: View): Map<string, any> {
+	const result = new Map<string, any>()
+	const uidVal = view.uid
+	if (uidVal != null) result.set("uid", uidVal)
+	const watermarkVal = view.watermark
+	if (watermarkVal != null) result.set("watermark", watermarkVal)
+	result.set("type", view.type)
+	const textVal = view.text
+	if (textVal != null) result.set("text", textVal)
+	const imageVal = view.image
+	if (imageVal != null) result.set("image", imageVal)
+	const styleVal = view.style
+	if (styleVal != null) result.set("style", styleToDict(styleVal))
+	return result
+}
+
+function viewsToDicts(views: Array<View> | null): Array<Map<string, any>> | null {
+	if (views == null || views.length == 0) return null
+	const result = new Array<Map<string, any>>()
+	for (let i = 0; i < views.length; i++) {
+		result.push(viewToDict(views[i]))
+	}
+	return result
+}
+
+function scanBarToDict(scanBar: ScanBarOptions): Map<string, any> {
+	const result = new Map<string, any>()
+	const imageVal = scanBar.image
+	if (imageVal != null) result.set("image", imageVal)
+	const widthPercentVal = scanBar.widthPercent
+	if (widthPercentVal != null) result.set("widthPercent", widthPercentVal)
+	const startYVal = scanBar.startY
+	if (startYVal != null) result.set("startY", startYVal)
+	const endYVal = scanBar.endY
+	if (endYVal != null) result.set("endY", endYVal)
+	return result
+}
+
+// ─────────────────────────────────────────────
+// 权限检查（委托给 CameraView.swift 原生方法，避免 UTS 具名参数语法限制）
+// ─────────────────────────────────────────────
+
+function hasPermission(): Promise<boolean> {
+	return new Promise((resolve, _) => {
+		if (CameraView.shared.isPermissionGranted()) {
+			resolve(true)
+			return
+		}
+		CameraView.shared.requestPermission((granted: boolean) => {
+			resolve(granted)
+		})
+	})
+}
+
+// ─────────────────────────────────────────────
+// 导出 API
+// ─────────────────────────────────────────────
+
+/**
+ * 显示相机页面
+ */
+export const showCamera: ShowCamera = (options?: CameraOptions): void => {
+	const opts = options ?? {} as CameraOptions
+
+	// 提前提取所有值，避免闭包引用问题（iOS 与 Android 一致）
+	const width: number | null = opts.width ?? null
+	const height: number | null = opts.height ?? null
+	const top: number | null = opts.top ?? null
+	const left: number | null = opts.left ?? null
+	const cameraFacing = opts.cameraFacing ?? "back"
+	const views = viewsToDicts(opts.views ?? null)
+	const scanBarDict = opts.scanBar != null ? scanBarToDict(opts.scanBar!) : null
+
+	const successFn = opts.success
+	const failFn = opts.fail
+	const completeFn = opts.complete
+	const hasSuccess = successFn != null
+	const hasFail = failFn != null
+	const hasComplete = completeFn != null
+	const needCallback = hasSuccess || hasFail || hasComplete
+
+	// 关键修复：权限检查移至 Swift 层 showCamera 中处理。
+	// 之前权限请求回调通过 UTS Promise 桥接，在权限弹框场景下回调可能丢失，
+	// 导致首次授权后 showCamera 不被执行。
+	// Swift 层会在权限通过后自动创建相机 UI 并启动预览。
+	const callback = needCallback
+		? CameraView.shared.createCameraOpenCallback(
+			(cameraFacingResult: string) => {
+				console.log('[index.uts] showCamera onSuccess callback')
+				if (hasSuccess) {
+					const result: CameraOpenSuccessResult = { cameraFacing: cameraFacingResult }
+					successFn!(result)
+				}
+				if (hasComplete) {
+					const result: CameraOpenSuccessResult = { cameraFacing: cameraFacingResult }
+					completeFn!(result)
+				}
+			},
+			(errCode: number, errMsg: string) => {
+				console.log('[index.uts] showCamera onFail callback', errCode, errMsg)
+				if (hasFail) {
+					const result: CameraOpenFailResult = { errCode, errMsg }
+					failFn!(result)
+				}
+				if (hasComplete) {
+					const result: CameraOpenFailResult = { errCode, errMsg }
+					completeFn!(result)
+				}
+			}
+		)
+		: null
+
+	console.log('[index.uts] calling CameraView.shared.showCamera')
+	CameraView.shared.showCamera(
+		null,
+		width,
+		height,
+		top,
+		left,
+		cameraFacing,
+		views,
+		scanBarDict,
+		callback
+	)
+	console.log('[index.uts] CameraView.shared.showCamera returned')
+}
+
+export const closeCamera: CloseCamera = (): void => {
+	CameraView.shared.closeCamera()
+}
+
+export const takePicture: TakePicture = (callback: (path: string) => void): void => {
+	const cb = CameraView.shared.createTakePictureCallback(
+		(path: string) => { callback(path) },
+		() => { callback("") }
+	)
+	CameraView.shared.takePicture(cb)
+}
+
+export const enableTapToFocus: EnableTapToFocus = (): void => {
+	CameraView.shared.enableTapToFocus()
+}
+
+export const disableTapToFocus: DisableTapToFocus = (): void => {
+	CameraView.shared.disableTapToFocus()
+}
+
+export const updateViews: UpdateViews = (views: Array<View>): void => {
+	CameraView.shared.updateViews(viewsToDicts(views))
+}
+
+export const addView: AddView = (viewConfig: View): void => {
+	CameraView.shared.addView(viewToDict(viewConfig))
+}
+
+export const updateView: UpdateView = (uid: string, viewConfig: View): void => {
+	CameraView.shared.updateView(uid, viewToDict(viewConfig))
+}
+
+export const removeView: RemoveView = (uid: string): void => {
+	CameraView.shared.removeView(uid)
+}
+
+export const clearViews: ClearViews = (): void => {
+	CameraView.shared.clearViews()
+}
+
+export const switchCamera: SwitchCamera = (): void => {
+	CameraView.shared.switchCamera()
+}
+
+// ─────────────────────────────────────────────
+// 扫码模式 API
+// ─────────────────────────────────────────────
+
+/**
+ * 启动扫码模式
+ */
+export const startScanMode: StartScanMode = (): boolean => {
+	return CameraView.shared.startScanMode()
+}
+
+/**
+ * 停止扫码模式
+ */
+export const stopScanMode: StopScanMode = (): boolean => {
+	return CameraView.shared.stopScanMode()
+}
+
+/**
+ * 获取当前帧（JPEG Base64）
+ * @param quality JPEG 压缩质量 (1-100)，默认 85
+ */
+export const getScanFrame: GetScanFrame = (quality?: number): string | null => {
+	return CameraView.shared.getScanFrame((quality ?? 85).toInt())
+}
+
+/**
+ * 扫码模式是否正在运行
+ */
+export const isScanModeActive: IsScanModeActive = (): boolean => {
+	return CameraView.shared.isScanModeActive()
+}
+
+/**
+ * 动态显示扫描条
+ */
+export const showScanBar: ShowScanBar = (options: ScanBarOptions): void => {
+	CameraView.shared.showScanBar(scanBarToDict(options))
+}
+
+/**
+ * 动态隐藏扫描条
+ */
+export const hideScanBar: HideScanBar = (): void => {
+	CameraView.shared.hideScanBar()
+}
